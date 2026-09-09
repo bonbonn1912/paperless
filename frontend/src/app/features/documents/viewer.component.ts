@@ -10,7 +10,12 @@ import { Document } from '../../core/models';
 import { DialogDirective } from '../../shared/directives/dialog.directive';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 
-// Ensure modern Promise methods required by pdfjs-dist are defined under Zone.js
+// Ensure modern ECMAScript methods required by pdfjs-dist are defined under Zone.js or older WebKit
+if (typeof (globalThis as any).Iterator === 'undefined') {
+  const IteratorPrototype = Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]()));
+  (globalThis as any).Iterator = function () {};
+  (globalThis as any).Iterator.prototype = IteratorPrototype;
+}
 if (typeof (Promise as any).try !== 'function') {
   (Promise as any).try = function <T>(fn: (...args: any[]) => T, ...args: any[]): Promise<T> {
     return new Promise<T>((resolve) => resolve(fn(...args)));

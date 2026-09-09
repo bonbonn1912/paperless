@@ -4,6 +4,12 @@
  * without native Promise.try and Promise.withResolvers.
  */
 
+if (typeof (globalThis as any).Iterator === 'undefined') {
+  const IteratorPrototype = Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]()));
+  (globalThis as any).Iterator = function () {};
+  (globalThis as any).Iterator.prototype = IteratorPrototype;
+}
+
 if (typeof (Promise as any).try !== 'function') {
   (Promise as any).try = function <T>(fn: (...args: any[]) => T, ...args: any[]): Promise<T> {
     return new Promise<T>((resolve) => {

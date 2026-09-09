@@ -3,7 +3,6 @@ import { authGuard } from './core/guards/auth.guard';
 import { LayoutComponent } from './features/layout/layout.component';
 import { LoginComponent } from './features/auth/login.component';
 import { LibraryComponent } from './features/documents/library.component';
-import { DocumentViewerComponent } from './features/documents/viewer.component';
 import { ReviewComponent } from './features/review/review.component';
 import { BatchUploadComponent } from './features/batch-upload/batch-upload.component';
 import { CameraCaptureComponent } from './features/camera/camera-capture.component';
@@ -30,7 +29,8 @@ export const routes: Routes = [
       },
       {
         path: 'documents/:id',
-        component: DocumentViewerComponent
+        loadComponent: () =>
+          import('./features/documents/viewer.component').then((m) => m.DocumentViewerComponent)
       },
       {
         path: 'review',

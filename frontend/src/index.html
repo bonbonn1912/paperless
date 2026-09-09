@@ -11,6 +11,11 @@
   <link rel="icon" type="image/x-icon" href="favicon.ico">
   <link rel="manifest" href="manifest.webmanifest">
   <script>
+    if (typeof Iterator === 'undefined') {
+      var IteratorPrototype = Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]()));
+      globalThis.Iterator = function () {};
+      globalThis.Iterator.prototype = IteratorPrototype;
+    }
     if (typeof Promise.try !== 'function') {
       Promise.try = function (fn, ...args) {
         return new Promise(function (resolve) {
