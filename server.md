@@ -56,9 +56,9 @@ DATABASE_URL=sqlite:////data/database/app.sqlite3
 # Ein sicherer Zufallsschlüssel (z. B. mit: openssl rand -hex 32)
 SECRET_KEY=generiere-hier-einen-langen-geheimen-zufalls-string
 
-# Benutzerzugang: admin / Passwort-Hash (Argon2id)
-# Wichtig: In .env-Dateien für Docker Compose müssen Dollarzeichen verdoppelt werden ($$argon2id$$v=19$$...)!
-APP_USERS_JSON={"admin":"$$argon2id$$v=19$$m=65536,t=3,p=4$$Fy29plb68Zwy7Mt7TySA6g$$VFIgxAUKS2E24O28/A4gMJ8nUCWmof+o/xIYWiqPYq0"}
+# Admin-Zugangsdaten (Einfach als Klartext - die App berechnet den Argon2id-Hash automatisch!)
+ADMIN_USER=admin
+ADMIN_PASSWORD=MeinGeheimesSuperPasswort123!
 
 # Hardware-Profile (4 Kerne / 6GB RAM)
 HEAVY_JOB_CONCURRENCY=1
@@ -71,24 +71,13 @@ OCR_LANGUAGES=deu+eng
 EOF
 ```
 
-### Schritt 2.3: Eigenes Admin-Passwort generieren
-Um ein sicheres eigenes Passwort festzulegen, generiere einen Argon2id-Hash (z. B. mit Python auf deinem Server):
+> **Tipp (Automatisches Hashing):** 
+> Du musst **keinen** Argon2-Hash mehr von Hand generieren! Trage einfach dein gewünschtes Passwort in `ADMIN_PASSWORD=...` ein. Die Paperless-Anwendung hasht dieses Passwort beim Start automatisch mit Argon2id. Damit gibt es auch keine Probleme mehr mit `$`-Zeichen in Docker Compose.
 
-```bash
-python3 -c '
-from argon2 import PasswordHasher
-ph = PasswordHasher()
-pw = input("Neues Passwort eingeben: ")
-# Dollarzeichen für Docker Compose verdoppeln ($ -> $$)
-escaped_hash = ph.hash(pw).replace("$", "$$")
-print("\nDein Eintrag für .env (APP_USERS_JSON):\nAPP_USERS_JSON={\"admin\":\"" + escaped_hash + "\"}")
-'
-```
-
-Trage den ausgegebenen Wert in deine `/opt/paperless/.env` ein:
-```bash
-APP_USERS_JSON={"admin":"$$argon2id$$v=19$$m=65536,t=3,p=4$$..."}
-```
+### Schritt 2.3: (Optional) Passwort über CI/CD-Pipeline setzen
+Falls du GitHub Actions oder GitLab CI nutzt, kannst du `ADMIN_PASSWORD` direkt als Secret bzw. CI/CD Variable hinterlegen:
+- **GitHub:** In den Repository Secrets als `ADMIN_PASSWORD` eintragen. Das Deployment-Skript trägt es automatisch in deine `.env` ein.
+- **GitLab:** Unter `Settings > CI/CD > Variables` als `ADMIN_PASSWORD` (Masked) hinterlegen.
 
 ---
 

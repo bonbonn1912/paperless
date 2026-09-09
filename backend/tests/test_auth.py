@@ -50,3 +50,23 @@ def test_csrf_protection_on_mutating_requests(auth_client):
     client.headers.update({settings.CSRF_HEADER_NAME: "wrong-csrf-token"})
     resp = client.post("/api/v1/folders", json={"name": "Test Folder"})
     assert resp.status_code == 403
+
+
+def test_admin_password_auto_hashing(client: TestClient):
+    old_pw = settings.ADMIN_PASSWORD
+    try:
+        settings.ADMIN_PASSWORD = "my-custom-plain-admin-password"
+        users = settings.get_users()
+        assert "admin" in users
+        assert users["admin"].startswith("$argon2id$")
+
+        # Test login directly with the plain password
+        resp = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": "my-custom-plain-admin-password"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["username"] == "admin"
+        assert "csrf_token" in resp.json()
+    finally:
+        settings.ADMIN_PASSWORD = old_pw

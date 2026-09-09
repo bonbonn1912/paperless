@@ -1,10 +1,17 @@
-from __future__ import annotations
-
+import functools
 import json
 from pathlib import Path
 from typing import Any, Dict
+from argon2 import PasswordHasher
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+@functools.lru_cache(maxsize=8)
+def _hash_plain_password(password: str) -> str:
+    """Generate Argon2id password hash for plain password string."""
+    ph = PasswordHasher()
+    return ph.hash(password)
 
 
 class Settings(BaseSettings):
@@ -44,7 +51,11 @@ class Settings(BaseSettings):
     SESSION_IDLE_TIMEOUT_SECONDS: int = 86400 * 7  # 7 days
     CSRF_HEADER_NAME: str = "X-CSRF-Token"
 
-    # JSON map of username -> Argon2id password hash
+    # Default admin user credentials (plain password auto-hashed with Argon2id)
+    ADMIN_USER: str = "admin"
+    ADMIN_PASSWORD: str = ""
+
+    # JSON map of username -> Argon2id password hash (optional / multi-user)
     APP_USERS_JSON: str = Field(
         default='{"admin":"$argon2id$v=19$m=65536,t=3,p=4$Fy29plb68Zwy7Mt7TySA6g$VFIgxAUKS2E24O28/A4gMJ8nUCWmof+o/xIYWiqPYq0"}'
     )
@@ -98,14 +109,20 @@ class Settings(BaseSettings):
         return f"sqlite:///{self.database_path.as_posix()}"
 
     def get_users(self) -> Dict[str, str]:
-        """Parse APP_USERS_JSON into username -> argon2id hash dict."""
+        """Parse APP_USERS_JSON and/or ADMIN_PASSWORD into username -> argon2id hash dict."""
+        users: Dict[str, str] = {}
         try:
-            users = json.loads(self.APP_USERS_JSON)
-            if isinstance(users, dict):
-                return {str(k): str(v).replace("$$", "$") for k, v in users.items()}
-            return {}
+            parsed = json.loads(self.APP_USERS_JSON)
+            if isinstance(parsed, dict):
+                users = {str(k): str(v).replace("$$", "$") for k, v in parsed.items()}
         except Exception:
-            return {}
+            pass
+
+        # If ADMIN_PASSWORD is set as a plain string, auto-generate Argon2id hash for ADMIN_USER
+        if self.ADMIN_PASSWORD:
+            users[self.ADMIN_USER] = _hash_plain_password(self.ADMIN_PASSWORD)
+
+        return users
 
     def ensure_directories(self) -> None:
         """Ensure all required directories exist on disk."""
