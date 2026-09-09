@@ -52,8 +52,13 @@ def init_db(engine_instance: Engine | None = None) -> None:
     eng = engine_instance or engine
     Base.metadata.create_all(bind=eng)
 
-    # Initialize FTS5 search table
+    # Initialize FTS5 search table and ensure columns exist
     with eng.begin() as conn:
+        try:
+            conn.execute(text("ALTER TABLE documents ADD COLUMN search_keywords TEXT"))
+        except Exception:
+            pass
+
         conn.execute(
             text(
                 """

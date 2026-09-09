@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, Generator, Optional
+from typing import Any, Dict, Generator, Optional, Tuple
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.orm import Session
@@ -31,6 +31,42 @@ def _range_streamer(file_path: Path, start: int, end: int, chunk_size: int = 64 
             yield data
 
 
+def parse_byte_range(range_header: str, file_size: int) -> Optional[Tuple[int, int]]:
+    """Parse HTTP Range header supporting:
+       - bytes=start-end (e.g. bytes=0-1024)
+       - bytes=start-    (e.g. bytes=1024-)
+       - bytes=-suffix   (e.g. bytes=-2048, used by PDF.js for trailer/xref)
+    """
+    if not range_header or not range_header.startswith("bytes="):
+        return None
+    range_val = range_header[6:].strip()
+    if "," in range_val:
+        range_val = range_val.split(",")[0].strip()
+
+    # Suffix range: bytes=-2048
+    suffix_match = re.match(r"^-(?P<suffix>\d+)$", range_val)
+    if suffix_match:
+        suffix_len = int(suffix_match.group("suffix"))
+        if suffix_len <= 0 or file_size == 0:
+            return None
+        start = max(0, file_size - suffix_len)
+        end = file_size - 1
+        return start, end
+
+    # Standard range: bytes=start-end or bytes=start-
+    range_match = re.match(r"^(?P<start>\d+)-(?P<end>\d*)$", range_val)
+    if range_match:
+        start = int(range_match.group("start"))
+        end_str = range_match.group("end")
+        end = int(end_str) if end_str else file_size - 1
+        if start >= file_size or start > end:
+            return None
+        end = min(end, file_size - 1)
+        return start, end
+
+    return None
+
+
 @router.get("/{document_id}/file")
 def get_document_file(
     document_id: str,
@@ -56,27 +92,26 @@ def get_document_file(
 
     # Check Range header
     if range_header:
-        range_match = re.match(r"bytes=(\d+)-(\d*)", range_header)
-        if not range_match:
-            raise HTTPException(status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE, detail="Invalid Range Header")
-
-        start_str, end_str = range_match.groups()
-        start = int(start_str)
-        end = int(end_str) if end_str else file_size - 1
-
-        if start >= file_size or end >= file_size or start > end:
+        byte_range = parse_byte_range(range_header, file_size)
+        if not byte_range:
             return Response(
                 status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
-                headers={"Content-Range": f"bytes */{file_size}"},
+                headers={
+                    "Content-Range": f"bytes */{file_size}",
+                    "Accept-Ranges": "bytes",
+                },
             )
 
+        start, end = byte_range
         content_length = end - start + 1
         headers = {
             "Content-Range": f"bytes {start}-{end}/{file_size}",
             "Accept-Ranges": "bytes",
             "Content-Length": str(content_length),
             "Content-Type": doc.mime_type,
+            "Content-Disposition": f'inline; filename="{doc.original_name}"',
             "Cache-Control": "no-store",
+            "Access-Control-Expose-Headers": "Content-Range, Accept-Ranges, Content-Length",
         }
         return StreamingResponse(
             _range_streamer(file_path, start, end),
@@ -89,7 +124,12 @@ def get_document_file(
         path=str(file_path),
         media_type=doc.mime_type,
         filename=doc.original_name,
-        headers={"Accept-Ranges": "bytes", "Cache-Control": "no-store"},
+        content_disposition_type="inline",
+        headers={
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-store",
+            "Access-Control-Expose-Headers": "Content-Range, Accept-Ranges, Content-Length",
+        },
     )
 
 
@@ -114,10 +154,40 @@ def get_document_thumbnail(
     return FileResponse(
         path=str(thumb_path),
         media_type="image/webp",
+        content_disposition_type="inline",
         headers={"Cache-Control": "private, max-age=86400"},
     )
 
 
+@router.get("/{document_id}/pages/{page_number}/file")
+def get_document_page_file(
+    document_id: str,
+    page_number: int,
+    user: CurrentUser,
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    """Serve rendered page image for viewer thumbnails."""
+    doc = (
+        db.query(Document)
+        .filter(Document.id == document_id, Document.owner == user, Document.deleted_at.is_(None))
+        .first()
+    )
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found")
+
+    page_path = storage_service.get_page_image(doc.id, doc.storage_key, doc.mime_type, page_number)
+    if not page_path or not page_path.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Page image not available")
+
+    return FileResponse(
+        path=str(page_path),
+        media_type="image/webp",
+        content_disposition_type="inline",
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
+
+
+@router.get("/{document_id}/viewer-manifest")
 @router.get("/{document_id}/viewer")
 def get_document_viewer_manifest(
     document_id: str,

@@ -38,6 +38,7 @@ class Document(Base):
     due_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     amount: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)  # in cents
     currency: Mapped[Optional[str]] = mapped_column(String(8), nullable=True, default="EUR")
+    search_keywords: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON array of up to 50 background search terms
 
     source: Mapped[str] = mapped_column(String(32), default="upload", nullable=False)  # upload | capture
     metadata_revision: Mapped[int] = mapped_column(Integer, default=1, nullable=False)

@@ -1,3 +1,4 @@
+if(typeof Promise.try!=="function"){Promise.try=function(f,...a){return new Promise(function(r){r(f(...a))})}};if(typeof Promise.withResolvers!=="function"){Promise.withResolvers=function(){var r,j,p=new Promise(function(res,rej){r=res;j=rej});return{promise:p,resolve:r,reject:j}}};
 /**
  * @licstart The following is the entire license notice for the
  * JavaScript code in this page

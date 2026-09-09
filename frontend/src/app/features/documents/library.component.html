@@ -1,0 +1,68 @@
+<section class="page">
+  <header class="page-header"><div class="library-title"><p class="eyebrow">DEIN PERSÖNLICHES ARCHIV</p><h1>{{ selectedFolder()?.name || selectedTag()?.name || 'Alles an einem Ort.' }}</h1><p>Aufbewahren, wiederfinden, weiterdenken.</p></div><div class="page-actions"><a routerLink="/camera" class="btn"><app-icon name="camera" />Scannen</a><a routerLink="/batch-upload" class="btn btn-primary"><app-icon name="plus" />Dokumente hinzufügen</a></div></header>
+  <div class="library-tools"><div class="search-row"><form class="search-field" (ngSubmit)="submitSearch()" role="search"><app-icon name="search" [size]="21" /><input type="search" aria-label="Dokumente durchsuchen" name="search" [(ngModel)]="searchQuery" placeholder="In deinen Dokumenten suchen …" /><button class="icon-button search-submit" aria-label="Suche starten"><app-icon name="arrow-right" [size]="18" /></button></form><div class="segmented" aria-label="Ansicht"><button (click)="viewMode.set('grid')" [class.is-active]="viewMode() === 'grid'" [attr.aria-pressed]="viewMode() === 'grid'" aria-label="Kachelansicht" title="Kachelansicht"><app-icon name="grid" [size]="18" /></button><button (click)="viewMode.set('list')" [class.is-active]="viewMode() === 'list'" [attr.aria-pressed]="viewMode() === 'list'" aria-label="Listenansicht" title="Listenansicht"><app-icon name="list" [size]="18" /></button></div></div>
+  <div class="filter-row" aria-label="Dokumentfilter">
+    <button class="filter-chip" [class.is-active]="!activeFilterTab() && !selectedTag() && !selectedFolder()" (click)="clearFilters()">Alle Dokumente</button>
+    <button class="filter-chip" [class.is-active]="activeFilterTab() === 'needs_review'" (click)="setFilterTab('needs_review')"><app-icon name="inbox" [size]="16" />Zu prüfen</button>
+
+    <div class="tags-filter-dropdown" (keydown.escape)="tagsDropdownOpen.set(false)">
+      <button 
+        type="button" 
+        class="filter-chip" 
+        [class.is-active]="selectedTag() !== null" 
+        [attr.aria-expanded]="tagsDropdownOpen()"
+        (click)="tagsDropdownOpen.set(!tagsDropdownOpen())"
+      >
+        <app-icon name="tag" [size]="14" />
+        <span *ngIf="!selectedTag()">Tags</span>
+        <span *ngIf="selectedTag()" class="inline-flex items-center gap-1.5">
+          <span class="tag-dot" [style.backgroundColor]="selectedTag()!.color"></span>
+          <span>{{ selectedTag()!.name }}</span>
+        </span>
+        <app-icon [name]="tagsDropdownOpen() ? 'chevron-down' : 'chevron-right'" [size]="14" />
+      </button>
+
+      <div *ngIf="tagsDropdownOpen()" class="tags-dropdown-menu">
+        <div class="tags-dropdown-header">
+          <span>Nach Tag filtern</span>
+          <button *ngIf="selectedTag()" type="button" class="btn-clear-tag" (click)="clearTagFilter($event)">Filter aufheben</button>
+        </div>
+        <div class="tags-dropdown-list">
+          <button 
+            *ngFor="let t of tagService.tags()" 
+            type="button" 
+            class="tags-dropdown-item" 
+            [class.is-active]="selectedTag()?.id === t.id"
+            (click)="selectTagFilter(t)"
+          >
+            <span class="tag-dot" [style.backgroundColor]="t.color"></span>
+            <span class="tag-name">{{ t.name }}</span>
+            <span class="nav-count" *ngIf="t.document_count">{{ t.document_count }}</span>
+            <app-icon *ngIf="selectedTag()?.id === t.id" name="check" [size]="14" />
+          </button>
+          <div *ngIf="!tagService.tags().length" class="tags-dropdown-empty">
+            Keine Tags vorhanden
+          </div>
+        </div>
+      </div>
+    </div>
+  </div></div>
+  <div *ngIf="errorMessage()" class="message message-error" role="alert"><app-icon name="alert-triangle" />{{ errorMessage() }}<button class="btn btn-quiet" (click)="loadDocuments()">Erneut versuchen</button></div>
+  <div class="library-caption"><span>{{ loading() ? 'Dokumente werden geladen …' : total() + (total() === 1 ? ' Dokument' : ' Dokumente') }}<span *ngIf="searchQuery"> · „{{ searchQuery }}“</span></span><span class="caption-secondary">Dein Wissen, gut aufgehoben.</span></div>
+  <div *ngIf="selectedDocIds.size" class="selection-bar"><span>{{ selectedDocIds.size }} ausgewählt</span><div class="page-actions"><button class="btn btn-quiet" (click)="selectedDocIds.clear()">Auswahl aufheben</button><button class="btn btn-danger" (click)="showDelete.set(true)"><app-icon name="trash" />Löschen</button></div></div>
+  <div *ngIf="loading()" class="document-grid" aria-label="Dokumente werden geladen" aria-busy="true"><div class="document-card" *ngFor="let i of [1,2,3,4]"><div class="document-preview skeleton"></div><div class="document-info"><div class="skeleton"></div><div class="skeleton" style="width:60%"></div></div></div></div>
+  <div *ngIf="viewMode() === 'grid' && !loading()" class="document-grid">
+    <article *ngFor="let doc of documents(); trackBy: trackDoc" class="document-card" [class.is-selected]="selectedDocIds.has(doc.id)">
+      <label class="document-check"><input type="checkbox" [attr.aria-label]="(doc.title || doc.original_name) + ' auswählen'" [checked]="selectedDocIds.has(doc.id)" (change)="toggleDocSelect(doc.id)" /></label>
+      <a [routerLink]="['/documents',doc.id]" class="document-preview" tabindex="-1" aria-hidden="true"><div class="paper-fallback"><app-icon name="file-text" [size]="40" /></div><img [src]="docService.getThumbnailUrl(doc.id)" alt="" loading="lazy" (error)="onThumbError($event)" /><span *ngIf="doc.classification_state === 'needs_review'" class="status status-review"><app-icon name="inbox" [size]="12" />Zu prüfen</span><span *ngIf="doc.classification_state !== 'needs_review' && (doc.processing_state === 'processing' || doc.processing_state === 'queued')" class="status status-active">{{ doc.processing_state === 'queued' ? 'Wartet' : 'In Verarbeitung' }}</span></a>
+      <div class="document-info"><div><a [routerLink]="['/documents',doc.id]" class="document-title">{{ doc.title || doc.original_name }}</a><p class="document-sender">{{ doc.sender || (doc.mime_type === 'application/pdf' ? 'PDF-Dokument' : 'Bilddokument') }}</p></div><div class="document-tags"><span *ngFor="let t of doc.tags.slice(0,3)" class="tag-pill">{{ t.name }}</span><span *ngIf="doc.tags.length > 3" class="tag-pill">+{{ doc.tags.length - 3 }}</span></div><div class="document-meta"><time>{{ (doc.document_date || doc.created_at) | date:'dd.MM.yyyy' }}</time><strong *ngIf="doc.amount_decimal">{{ formatAmount(doc) }}</strong></div></div>
+    </article>
+  </div>
+  <div *ngIf="viewMode() === 'list' && !loading() && documents().length" class="document-list">
+    <div class="document-row"><label class="document-check"><input type="checkbox" aria-label="Alle angezeigten Dokumente auswählen" [checked]="selectedDocIds.size === documents().length" [indeterminate]="selectedDocIds.size > 0 && selectedDocIds.size < documents().length" (change)="toggleSelectAll()" /></label><span class="muted small">Dokument</span><span class="row-tags muted small">Tags</span><span class="row-date muted small">Datum</span><span class="row-amount muted small">Betrag</span><span></span></div>
+    <div class="document-row" *ngFor="let doc of documents(); trackBy: trackDoc"><label class="document-check"><input type="checkbox" [attr.aria-label]="(doc.title || doc.original_name) + ' auswählen'" [checked]="selectedDocIds.has(doc.id)" (change)="toggleDocSelect(doc.id)" /></label><div class="min-w-0"><a class="document-title" [routerLink]="['/documents',doc.id]">{{ doc.title || doc.original_name }}</a><p class="document-sender">{{ doc.sender || 'Dokument' }}</p><span *ngIf="doc.classification_state === 'needs_review'" class="status status-review">Zu prüfen</span></div><div class="document-tags row-tags"><span *ngFor="let t of doc.tags.slice(0,2)" class="tag-pill">{{ t.name }}</span></div><time class="document-row-meta row-date">{{ (doc.document_date || doc.created_at) | date:'dd.MM.yyyy' }}</time><span class="document-row-meta row-amount">{{ formatAmount(doc) }}</span><a class="icon-button" [routerLink]="['/documents',doc.id]" [attr.aria-label]="(doc.title || doc.original_name) + ' öffnen'"><app-icon name="chevron-right" [size]="18" /></a></div>
+  </div>
+  <div *ngIf="!loading() && !errorMessage() && !documents().length" class="empty-state"><div class="empty-symbol"><app-icon [name]="hasFilters() ? 'search' : 'layers'" [size]="32" /></div><h2>{{ hasFilters() ? 'Noch kein passender Treffer.' : 'Platz für deine Dokumente.' }}</h2><p>{{ hasFilters() ? 'Versuche einen anderen Suchbegriff oder entferne die Filter.' : 'Eine Rechnung, ein Vertrag, ein guter Gedanke. Dein Archiv beginnt mit dem ersten Dokument.' }}</p><button *ngIf="hasFilters()" class="btn" (click)="clearFilters()">Filter zurücksetzen</button><a *ngIf="!hasFilters()" routerLink="/batch-upload" class="btn btn-primary"><app-icon name="plus" />Erstes Dokument hinzufügen</a></div>
+  <div *ngIf="total() > pageSize" class="pagination"><span>{{ offset() + 1 }}–{{ Math.min(offset() + pageSize,total()) }} von {{ total() }}</span><div class="page-actions"><button class="icon-button" aria-label="Vorherige Ergebnisse" [disabled]="offset() === 0 || loading()" (click)="changePage(-1)"><app-icon name="chevron-left" /></button><button class="icon-button" aria-label="Weitere Ergebnisse" [disabled]="offset() + pageSize >= total() || loading()" (click)="changePage(1)"><app-icon name="chevron-right" /></button></div></div>
+</section>
+<div *ngIf="showDelete()" class="modal-backdrop" appDialog aria-label="Dokumente löschen" (dialogClose)="showDelete.set(false)"><div class="modal-panel"><h2>{{ selectedDocIds.size }} Dokumente löschen?</h2><p class="muted">Die Dokumente werden aus deinem Archiv entfernt. Diese Aktion lässt sich hier nicht rückgängig machen.</p><div class="modal-actions"><button class="btn" (click)="showDelete.set(false)">Behalten</button><button class="btn btn-danger" [disabled]="deleting()" (click)="bulkDelete()">{{ deleting() ? 'Wird gelöscht …' : 'Dokumente löschen' }}</button></div></div></div>

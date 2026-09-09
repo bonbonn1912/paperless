@@ -4,6 +4,7 @@ from typing import Callable, Optional
 import pymupdf as fitz
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models.document import Document, DocumentFieldOverride, DocumentPage
 from app.models.job import Job
 from app.providers.tesseract import tesseract_provider
@@ -158,26 +159,8 @@ class DocumentPipeline:
 
         extracted = metadata_extractor.extract_metadata(full_text, doc.original_name)
 
-        # Check manual field overrides
-        overrides = {
-            fo.field_name: fo.value
-            for fo in db.query(DocumentFieldOverride).filter(DocumentFieldOverride.document_id == doc.id).all()
-        }
-
-        if "title" not in overrides and not doc.title and extracted.get("title"):
-            doc.title = extracted["title"]
-        if "sender" not in overrides and not doc.sender and extracted.get("sender"):
-            doc.sender = extracted["sender"]
-        if "document_date" not in overrides and not doc.document_date and extracted.get("document_date"):
-            doc.document_date = extracted["document_date"]
-        if "due_date" not in overrides and not doc.due_date and extracted.get("due_date"):
-            doc.due_date = extracted["due_date"]
-        if "amount" not in overrides and doc.amount is None and extracted.get("amount") is not None:
-            doc.amount = extracted["amount"]
-            doc.currency = extracted.get("currency", "EUR")
-
-        # Step 4: Classifying
-        job.step = "classifying"
+        # Step 4: Classifying & Categorization (AI via Ollama with Rule Fallback)
+        job.step = "ai_classifying" if settings.OLLAMA_ENABLED else "classifying"
         db.commit()
         if heartbeat_callback:
             heartbeat_callback()
@@ -191,6 +174,50 @@ class DocumentPipeline:
             run_id=job.run_id,
         )
         doc.classification_state = class_state
+
+        # Check manual field overrides
+        overrides = {
+            fo.field_name: fo.value
+            for fo in db.query(DocumentFieldOverride).filter(DocumentFieldOverride.document_id == doc.id).all()
+        }
+
+        # Apply extracted or AI-refined metadata (manual overrides have absolute priority)
+        if "title" not in overrides:
+            if extracted.get("title_from_ai") and extracted.get("title"):
+                doc.title = extracted["title"]
+            elif not doc.title and extracted.get("title"):
+                doc.title = extracted["title"]
+
+        if "sender" not in overrides:
+            if extracted.get("sender_from_ai") and extracted.get("sender"):
+                doc.sender = extracted["sender"]
+            elif not doc.sender and extracted.get("sender"):
+                doc.sender = extracted["sender"]
+
+        if "document_date" not in overrides:
+            if extracted.get("date_from_ai") and extracted.get("document_date"):
+                doc.document_date = extracted["document_date"]
+            elif not doc.document_date and extracted.get("document_date"):
+                doc.document_date = extracted["document_date"]
+
+        if "due_date" not in overrides:
+            if extracted.get("due_date_from_ai") and extracted.get("due_date"):
+                doc.due_date = extracted["due_date"]
+            elif not doc.due_date and extracted.get("due_date"):
+                doc.due_date = extracted["due_date"]
+
+        if "amount" not in overrides:
+            if extracted.get("amount_from_ai") and extracted.get("amount") is not None:
+                doc.amount = extracted["amount"]
+                doc.currency = extracted.get("currency", "EUR")
+            elif doc.amount is None and extracted.get("amount") is not None:
+                doc.amount = extracted["amount"]
+                doc.currency = extracted.get("currency", "EUR")
+
+        # Save semantic search keywords (up to 50, invisible in UI, indexed in FTS5)
+        if extracted.get("keywords"):
+            import json
+            doc.search_keywords = json.dumps(extracted["keywords"], ensure_ascii=False)
 
         # Step 5: Indexing
         job.step = "indexing"

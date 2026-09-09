@@ -1,164 +1,37 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, inject, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { BatchService, UploadQueueItem } from '../../core/services/batch.service';
+import { SettingsService } from '../../core/services/settings.service';
+import { PollingService } from '../../core/services/polling.service';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 
 @Component({
   selector: 'app-batch-upload',
   standalone: true,
   imports: [CommonModule, RouterModule, IconComponent],
-  template: `
-    <div class="max-w-4xl mx-auto space-y-6">
-      <div>
-        <h1 class="text-2xl font-bold tracking-tight">Dokumente hochladen</h1>
-        <p class="text-xs text-slate-500 mt-0.5">
-          Ziehen Sie bis zu 100 Dateien (PDF, JPG, PNG, WEBP) gleichzeitig hierher.
-        </p>
-      </div>
-
-      <!-- Drag & Drop Zone -->
-      <div
-        (dragover)="onDragOver($event)"
-        (dragleave)="onDragLeave($event)"
-        (drop)="onDrop($event)"
-        [class.border-indigo-500]="isDragging()"
-        [class.bg-indigo-50/50]="isDragging()"
-        [class.dark:bg-indigo-950/20]="isDragging()"
-        class="border-2 border-dashed border-slate-300 dark:border-slate-700 rounded-3xl p-8 sm:p-12 text-center transition flex flex-col items-center justify-center gap-4 bg-white dark:bg-slate-850 cursor-pointer shadow-xs"
-        (click)="fileInput.click()"
-      >
-        <div class="p-4 bg-indigo-50 dark:bg-indigo-950/60 rounded-2xl text-indigo-600 dark:text-indigo-400">
-          <app-icon name="upload" [size]="36"></app-icon>
-        </div>
-        <div class="space-y-1">
-          <p class="font-semibold text-sm">Dateien hierher ziehen oder klicken zum Auswählen</p>
-          <p class="text-xs text-slate-400">PDF, JPEG, PNG, WEBP bis 50MB pro Datei</p>
-        </div>
-
-        <input
-          #fileInput
-          type="file"
-          multiple
-          (change)="onFileSelected($event)"
-          accept=".pdf,image/jpeg,image/png,image/webp"
-          class="hidden"
-        />
-      </div>
-
-      <!-- Upload Queue Section -->
-      <div *ngIf="batchService.queue().length > 0" class="bg-white dark:bg-slate-850 rounded-3xl border border-slate-200 dark:border-slate-800 p-5 space-y-4 shadow-xs">
-        <div class="flex items-center justify-between flex-wrap gap-2">
-          <div>
-            <h3 class="font-bold text-sm">Upload-Warteschlange ({{ batchService.queue().length }} Dateien)</h3>
-            <p class="text-xs text-slate-400">
-              {{ completedCount() }} von {{ batchService.queue().length }} abgeschlossen
-            </p>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <button
-              type="button"
-              (click)="batchService.clearQueue()"
-              [disabled]="batchService.isUploading()"
-              class="px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40 touch-target transition"
-            >
-              Warteschlange leeren
-            </button>
-            <button
-              type="button"
-              (click)="batchService.startBatchUpload()"
-              [disabled]="batchService.isUploading() || pendingCount() === 0"
-              class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold touch-target transition shadow-xs flex items-center gap-2"
-            >
-              <span *ngIf="batchService.isUploading()" class="animate-spin">
-                <app-icon name="refresh-cw" [size]="14"></app-icon>
-              </span>
-              <span>{{ batchService.isUploading() ? 'Wird hochgeladen...' : 'Upload starten (' + pendingCount() + ')' }}</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Overall Progress Bar -->
-        <div class="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-          <div
-            class="bg-indigo-600 h-full transition-all duration-300"
-            [style.width.%]="overallProgress()"
-          ></div>
-        </div>
-
-        <!-- File List -->
-        <div class="divide-y divide-slate-100 dark:divide-slate-800 max-h-96 overflow-y-auto">
-          <div
-            *ngFor="let item of batchService.queue()"
-            class="py-3 flex items-center justify-between gap-3 text-xs"
-          >
-            <div class="flex items-center gap-3 min-w-0 flex-1">
-              <div class="p-2 bg-slate-100 dark:bg-slate-800 rounded-lg text-slate-500 shrink-0">
-                <app-icon name="file-text" [size]="18"></app-icon>
-              </div>
-              <div class="min-w-0 flex-1">
-                <p class="font-semibold truncate">{{ item.name }}</p>
-                <p class="text-[11px] text-slate-400">{{ formatSize(item.size) }}</p>
-              </div>
-            </div>
-
-            <!-- Status Pill -->
-            <div class="flex items-center gap-3 shrink-0">
-              <span
-                *ngIf="item.status === 'pending'"
-                class="px-2.5 py-1 bg-slate-100 dark:bg-slate-800 text-slate-500 rounded-full text-[11px] font-medium"
-              >
-                Wartend
-              </span>
-
-              <span
-                *ngIf="item.status === 'uploading'"
-                class="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-full text-[11px] font-medium flex items-center gap-1"
-              >
-                <app-icon name="refresh-cw" [size]="12" extraClass="animate-spin"></app-icon>
-                <span>Upload</span>
-              </span>
-
-              <span
-                *ngIf="item.status === 'accepted'"
-                class="px-2.5 py-1 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-full text-[11px] font-semibold flex items-center gap-1"
-              >
-                <app-icon name="check" [size]="12"></app-icon>
-                <span>Eingereiht</span>
-              </span>
-
-              <span
-                *ngIf="item.status === 'duplicate'"
-                class="px-2.5 py-1 bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 rounded-full text-[11px] font-semibold"
-              >
-                Duplikat erkannt
-              </span>
-
-              <span
-                *ngIf="item.status === 'failed'"
-                class="px-2.5 py-1 bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 rounded-full text-[11px] font-semibold"
-                [title]="item.error || 'Fehler beim Upload'"
-              >
-                Fehlgeschlagen
-              </span>
-
-              <button
-                *ngIf="item.status === 'pending' || item.status === 'failed'"
-                type="button"
-                (click)="batchService.removeItem(item.clientId)"
-                class="p-1 rounded text-slate-400 hover:text-rose-600 touch-target"
-              >
-                <app-icon name="x" [size]="14"></app-icon>
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  `
+  templateUrl: './batch-upload.component.html'
 })
-export class BatchUploadComponent {
+export class BatchUploadComponent implements OnInit {
+  settingsService = inject(SettingsService);
+  polling = inject(PollingService);
+  uploadError = signal<string | null>(null);
+  ngOnInit() { this.settingsService.loadCapabilities().subscribe({ error: () => {} }); }
+  trackItem(_index: number, item: UploadQueueItem) { return item.clientId; }
+  async startUpload() {
+    this.uploadError.set(null);
+    const max = this.settingsService.capabilities()?.max_batch_files || 100;
+    if (this.pendingCount() > max) { this.uploadError.set(`Bitte höchstens ${max} Dateien pro Stapel auswählen.`); return; }
+    await this.batchService.startBatchUpload();
+    if (this.batchService.queue().some(i => i.status === 'pending')) this.uploadError.set('Der Upload konnte nicht gestartet werden. Bitte erneut versuchen.');
+  }
+  statusLabel(item: UploadQueueItem) {
+    const status = this.polling.activeItems().find(s => s.document_id && s.document_id === item.documentId);
+    if (status?.classification_state === 'needs_review') return 'Zu prüfen';
+    if (status?.processing_state === 'ready') return 'Im Archiv';
+    if (status?.processing_state === 'processing') return 'In Verarbeitung';
+    return ({ pending: 'Bereit zum Upload', uploading: 'Wird übertragen', accepted: 'Eingereiht', processing: 'In Verarbeitung', ready: 'Im Archiv', duplicate: 'Bereits vorhanden', failed: 'Fehlgeschlagen' })[item.status];
+  }
   batchService = inject(BatchService);
   isDragging = signal<boolean>(false);
 

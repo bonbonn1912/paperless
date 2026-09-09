@@ -62,7 +62,17 @@ class StorageService:
         settings.ensure_directories()
 
     def get_document_path(self, storage_key: str) -> Path:
-        return settings.documents_dir / storage_key
+        primary = settings.documents_dir / storage_key
+        if primary.exists():
+            return primary
+        # Fallback check alternate data directories
+        alt1 = Path(__file__).resolve().parent.parent.parent / "data" / "documents" / storage_key
+        if alt1.exists():
+            return alt1
+        alt2 = Path(__file__).resolve().parent.parent.parent / "backend" / "data" / "documents" / storage_key
+        if alt2.exists():
+            return alt2
+        return primary
 
     def get_derived_dir(self, document_id: str) -> Path:
         p = settings.derived_dir / document_id
@@ -243,5 +253,37 @@ class StorageService:
         except Exception:
             return None
 
+    def get_page_image(self, document_id: str, storage_key: str, mime_type: str, page_number: int) -> Optional[Path]:
+        """Render and cache an image of a specific page for viewer sidebar navigation."""
+        source_path = self.get_document_path(storage_key)
+        if not source_path.exists():
+            return None
+
+        derived_dir = self.get_derived_dir(document_id)
+        page_thumb_path = derived_dir / f"page_{page_number}.webp"
+        if page_thumb_path.exists():
+            return page_thumb_path
+
+        try:
+            if mime_type == "application/pdf":
+                doc = fitz.open(str(source_path))
+                if 1 <= page_number <= doc.page_count:
+                    page = doc.load_page(page_number - 1)
+                    pix = page.get_pixmap(dpi=100)
+                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    img.thumbnail((400, 400))
+                    img.save(str(page_thumb_path), format="WEBP", quality=80)
+                doc.close()
+            elif mime_type.startswith("image/") and page_number == 1:
+                with Image.open(source_path) as img:
+                    img = img.convert("RGB")
+                    img.thumbnail((400, 400))
+                    img.save(str(page_thumb_path), format="WEBP", quality=80)
+
+            return page_thumb_path if page_thumb_path.exists() else None
+        except Exception:
+            return None
+
 
 storage_service = StorageService()
+

@@ -7,364 +7,32 @@ import { DocumentService, DocumentViewerManifest, InDocSearchHit } from '../../c
 import { TagService, TagResponse } from '../../core/services/tag.service';
 import { FolderService, FolderNode } from '../../core/services/folder.service';
 import { Document } from '../../core/models';
+import { DialogDirective } from '../../shared/directives/dialog.directive';
 import { IconComponent } from '../../shared/components/icon/icon.component';
+
+// Ensure modern Promise methods required by pdfjs-dist are defined under Zone.js
+if (typeof (Promise as any).try !== 'function') {
+  (Promise as any).try = function <T>(fn: (...args: any[]) => T, ...args: any[]): Promise<T> {
+    return new Promise<T>((resolve) => resolve(fn(...args)));
+  };
+}
+if (typeof (Promise as any).withResolvers !== 'function') {
+  (Promise as any).withResolvers = function <T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: any) => void;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  };
+}
 
 @Component({
   selector: 'app-document-viewer',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, IconComponent],
-  template: `
-    <div class="h-[calc(100vh-6rem)] flex flex-col -m-4 sm:-m-6 bg-slate-100 dark:bg-slate-900 overflow-hidden">
-      <!-- Viewer Top Toolbar -->
-      <div class="h-14 bg-white dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 px-4 flex items-center justify-between shrink-0 z-20 shadow-xs">
-        <!-- Back and Title -->
-        <div class="flex items-center gap-3 min-w-0">
-          <a
-            routerLink="/documents"
-            class="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 touch-target flex items-center justify-center shrink-0"
-            title="Zurück zur Übersicht"
-          >
-            <app-icon name="chevron-left" [size]="20"></app-icon>
-          </a>
-
-          <div class="min-w-0">
-            <h2 class="text-sm font-bold truncate text-slate-800 dark:text-slate-100">
-              {{ doc()?.title || doc()?.original_name }}
-            </h2>
-            <p class="text-[11px] text-slate-400 truncate">
-              {{ doc()?.mime_type }} · {{ formatSize(doc()?.file_size || 0) }}
-            </p>
-          </div>
-        </div>
-
-        <!-- Canvas Controls -->
-        <div class="flex items-center gap-1 sm:gap-2">
-          <!-- Page Nav -->
-          <div *ngIf="totalPages() > 1" class="flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-xl px-2 py-1 text-xs font-semibold">
-            <button
-              type="button"
-              (click)="prevPage()"
-              [disabled]="currentPage() <= 1"
-              class="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 touch-target flex items-center justify-center"
-            >
-              <app-icon name="chevron-left" [size]="14"></app-icon>
-            </button>
-            <span class="px-1">{{ currentPage() }} / {{ totalPages() }}</span>
-            <button
-              type="button"
-              (click)="nextPage()"
-              [disabled]="currentPage() >= totalPages()"
-              class="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-30 touch-target flex items-center justify-center"
-            >
-              <app-icon name="chevron-right" [size]="14"></app-icon>
-            </button>
-          </div>
-
-          <!-- Zoom & Rotate -->
-          <div class="hidden sm:flex items-center gap-1 bg-slate-100 dark:bg-slate-800 rounded-xl p-1 text-xs">
-            <button
-              type="button"
-              (click)="zoomOut()"
-              class="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 touch-target flex items-center justify-center"
-              title="Verkleinern"
-            >
-              <app-icon name="zoom-out" [size]="16"></app-icon>
-            </button>
-            <span class="px-1 text-[11px] font-mono">{{ Math.round(zoom() * 100) }}%</span>
-            <button
-              type="button"
-              (click)="zoomIn()"
-              class="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 touch-target flex items-center justify-center"
-              title="Vergrößern"
-            >
-              <app-icon name="zoom-in" [size]="16"></app-icon>
-            </button>
-            <button
-              type="button"
-              (click)="rotate()"
-              class="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 touch-target flex items-center justify-center ml-1 border-l border-slate-200 dark:border-slate-700"
-              title="90° Drehen"
-            >
-              <app-icon name="rotate-cw" [size]="16"></app-icon>
-            </button>
-          </div>
-
-          <!-- In-Doc Search Input -->
-          <div class="relative hidden md:block">
-            <input
-              type="search"
-              [(ngModel)]="searchInDocQuery"
-              (keydown.enter)="onSearchInDoc()"
-              placeholder="Im Dokument suchen..."
-              class="w-44 pl-8 pr-3 py-1.5 text-xs bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-hidden focus:border-indigo-500"
-            />
-            <div class="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none text-slate-400">
-              <app-icon name="search" [size]="14"></app-icon>
-            </div>
-          </div>
-
-          <!-- Download Button -->
-          <a
-            [href]="docService.getFileUrl(docId)"
-            download
-            class="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 touch-target flex items-center justify-center"
-            title="Originaldatei herunterladen"
-          >
-            <app-icon name="download" [size]="18"></app-icon>
-          </a>
-
-          <!-- Toggle Sidebar (Mobile) -->
-          <button
-            type="button"
-            (click)="metaOpen.set(!metaOpen())"
-            [class.text-indigo-600]="metaOpen()"
-            class="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 touch-target flex items-center justify-center lg:hidden"
-            title="Metadaten ein-/ausblenden"
-          >
-            <app-icon name="edit" [size]="18"></app-icon>
-          </button>
-        </div>
-      </div>
-
-      <!-- Main Viewer Area (Split: Thumbnails Tray + Canvas Area + Metadata Sidebar) -->
-      <div class="flex-1 flex overflow-hidden relative">
-        <!-- Thumbnail Tray (Desktop) -->
-        <div *ngIf="manifest() && manifest()!.total_pages > 1" class="hidden md:flex flex-col w-28 bg-white dark:bg-slate-850 border-r border-slate-200 dark:border-slate-800 p-2 overflow-y-auto space-y-2 shrink-0">
-          <button
-            *ngFor="let p of manifest()!.pages; let idx = index"
-            type="button"
-            (click)="goToPage(idx + 1)"
-            [class.ring-2]="currentPage() === idx + 1"
-            [class.ring-indigo-600]="currentPage() === idx + 1"
-            class="relative rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 aspect-3/4 bg-slate-50 dark:bg-slate-800 p-1 flex flex-col items-center justify-center group touch-target transition"
-          >
-            <img
-              [src]="docService.getPageFileUrl(docId, idx + 1)"
-              [alt]="'Seite ' + (idx + 1)"
-              class="w-full h-full object-contain"
-              (error)="onThumbError($event)"
-            />
-            <span class="absolute bottom-1 bg-black/60 text-white text-[10px] px-1.5 py-0.5 rounded font-mono">
-              {{ idx + 1 }}
-            </span>
-          </button>
-        </div>
-
-        <!-- Center Canvas / Image Container -->
-        <div #viewportContainer class="flex-1 overflow-auto flex items-center justify-center p-4 relative select-none">
-          <!-- In-Doc Search Hits Indicator -->
-          <div *ngIf="searchHits().length > 0" class="absolute top-4 left-4 z-10 bg-white/90 dark:bg-slate-850/90 backdrop-blur border border-indigo-200 dark:border-indigo-800 px-3 py-1.5 rounded-xl text-xs font-semibold text-indigo-700 dark:text-indigo-300 shadow-md">
-            {{ searchHits().length }} Treffer für "{{ searchInDocQuery }}"
-          </div>
-
-          <!-- Canvas Wrapper with Highlights -->
-          <div class="relative shadow-xl rounded-lg overflow-hidden bg-white dark:bg-slate-850 border border-slate-200 dark:border-slate-800">
-            <!-- PDF Canvas -->
-            <canvas #pdfCanvas [class.hidden]="isImage()"></canvas>
-
-            <!-- Fallback for direct images -->
-            <img
-              *ngIf="isImage()"
-              [src]="docService.getFileUrl(docId)"
-              [style.transform]="'scale(' + zoom() + ') rotate(' + rotation() + 'deg)'"
-              class="max-w-full max-h-full object-contain transition-transform duration-150"
-              alt="Dokument Vorschau"
-            />
-
-            <!-- In-Doc Search Highlights Overlay -->
-            <div
-              *ngFor="let h of currentPageHits()"
-              [style.left.px]="h.bbox ? h.bbox.x0 * zoom() : 0"
-              [style.top.px]="h.bbox ? h.bbox.y0 * zoom() : 0"
-              [style.width.px]="h.bbox ? (h.bbox.x1 - h.bbox.x0) * zoom() : 0"
-              [style.height.px]="h.bbox ? (h.bbox.y1 - h.bbox.y0) * zoom() : 0"
-              class="absolute bg-amber-400/40 border border-amber-500 rounded-xs pointer-events-none"
-            ></div>
-          </div>
-        </div>
-
-        <!-- Right Metadata Sidebar -->
-        <aside
-          [class.translate-x-0]="metaOpen()"
-          [class.translate-x-full]="!metaOpen()"
-          class="fixed lg:static inset-y-0 right-0 z-30 w-80 sm:w-96 bg-white dark:bg-slate-850 border-l border-slate-200 dark:border-slate-800 flex flex-col transition-transform duration-200 ease-in-out lg:translate-x-0 shrink-0 shadow-lg lg:shadow-none"
-        >
-          <!-- Sidebar Header -->
-          <div class="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
-            <h3 class="font-bold text-sm">Metadaten & Eigenschaften</h3>
-            <button
-              type="button"
-              (click)="metaOpen.set(false)"
-              class="p-1 rounded-lg text-slate-400 hover:text-slate-600 lg:hidden touch-target"
-            >
-              <app-icon name="x" [size]="18"></app-icon>
-            </button>
-          </div>
-
-          <!-- Metadata Form -->
-          <div class="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
-            <!-- Review Status Banner -->
-            <div
-              *ngIf="doc()?.classification_state === 'needs_review'"
-              class="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/80 rounded-xl space-y-2"
-            >
-              <div class="flex items-center gap-2 text-amber-700 dark:text-amber-300 font-bold">
-                <app-icon name="alert-triangle" [size]="16"></app-icon>
-                <span>Prüfung erforderlich</span>
-              </div>
-              <p class="text-slate-600 dark:text-slate-300 text-[11px]">
-                Bitte überprüfen Sie extrahierte Daten und Tags.
-              </p>
-              <button
-                type="button"
-                (click)="resolveReview()"
-                class="w-full py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg font-semibold touch-target transition shadow-xs"
-              >
-                Als geprüft markieren
-              </button>
-            </div>
-
-            <!-- Title Field -->
-            <div>
-              <label class="block font-semibold text-slate-500 mb-1">Titel</label>
-              <input
-                type="text"
-                [(ngModel)]="editTitle"
-                class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-hidden focus:border-indigo-500"
-              />
-            </div>
-
-            <!-- Sender Field -->
-            <div>
-              <label class="block font-semibold text-slate-500 mb-1">Absender / Partner</label>
-              <input
-                type="text"
-                [(ngModel)]="editSender"
-                placeholder="z.B. Stadtwerke, Amazon"
-                class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-hidden focus:border-indigo-500"
-              />
-            </div>
-
-            <!-- Date Field -->
-            <div>
-              <label class="block font-semibold text-slate-500 mb-1">Belegdatum</label>
-              <input
-                type="date"
-                [(ngModel)]="editDate"
-                class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-hidden focus:border-indigo-500"
-              />
-            </div>
-
-            <!-- Amount & Currency -->
-            <div class="grid grid-cols-2 gap-2">
-              <div>
-                <label class="block font-semibold text-slate-500 mb-1">Betrag</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  [(ngModel)]="editAmount"
-                  placeholder="0.00"
-                  class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-hidden focus:border-indigo-500"
-                />
-              </div>
-              <div>
-                <label class="block font-semibold text-slate-500 mb-1">Währung</label>
-                <input
-                  type="text"
-                  [(ngModel)]="editCurrency"
-                  placeholder="EUR"
-                  class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-hidden focus:border-indigo-500"
-                />
-              </div>
-            </div>
-
-            <!-- Tags Section -->
-            <div class="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-              <label class="block font-semibold text-slate-500">Zugewiesene Tags</label>
-              <div class="flex items-center gap-1.5 flex-wrap min-h-7">
-                <span
-                  *ngFor="let t of doc()?.tags"
-                  class="px-2.5 py-1 text-xs font-medium rounded-lg flex items-center gap-1.5"
-                  [style.backgroundColor]="t.color + '20'"
-                  [style.color]="t.color"
-                >
-                  <span>{{ t.name }}</span>
-                  <button
-                    type="button"
-                    (click)="removeTag(t.id)"
-                    class="hover:opacity-75 touch-target flex items-center justify-center"
-                  >
-                    <app-icon name="x" [size]="12"></app-icon>
-                  </button>
-                </span>
-              </div>
-
-              <!-- Add Tag Dropdown -->
-              <div class="flex items-center gap-2">
-                <select
-                  [(ngModel)]="tagToAdd"
-                  class="flex-1 px-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden"
-                >
-                  <option [ngValue]="null">Tag auswählen...</option>
-                  <option *ngFor="let at of availableTags()" [value]="at.id">
-                    {{ at.name }}
-                  </option>
-                </select>
-                <button
-                  type="button"
-                  (click)="addTag()"
-                  [disabled]="!tagToAdd"
-                  class="px-3 py-1.5 bg-slate-200 dark:bg-slate-700 hover:bg-indigo-600 hover:text-white disabled:opacity-40 rounded-xl font-medium touch-target transition"
-                >
-                  Hinzufügen
-                </button>
-              </div>
-            </div>
-
-            <!-- Folders Section -->
-            <div class="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-              <label class="block font-semibold text-slate-500">Ordner</label>
-              <select
-                [(ngModel)]="selectedFolderId"
-                (change)="onFolderChange()"
-                class="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden"
-              >
-                <option [value]="''">Kein Ordner (Wurzelverzeichnis)</option>
-                <option *ngFor="let f of folderService.folders()" [value]="f.id">
-                  {{ f.name }}
-                </option>
-              </select>
-            </div>
-
-            <!-- Save Changes Button -->
-            <div class="pt-3">
-              <button
-                type="button"
-                (click)="saveMetadata()"
-                [disabled]="saving()"
-                class="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-semibold touch-target transition shadow-xs flex items-center justify-center gap-2"
-              >
-                <app-icon name="check" [size]="16"></app-icon>
-                <span>{{ saving() ? 'Speichern...' : 'Änderungen speichern' }}</span>
-              </button>
-            </div>
-
-            <!-- Danger Zone -->
-            <div class="pt-4 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                (click)="deleteDocument()"
-                class="w-full py-2 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-600 dark:text-rose-400 rounded-xl font-medium touch-target transition flex items-center justify-center gap-2"
-              >
-                <app-icon name="trash" [size]="14"></app-icon>
-                <span>Dokument löschen</span>
-              </button>
-            </div>
-          </div>
-        </aside>
-      </div>
-    </div>
-  `
+  imports: [CommonModule, RouterModule, FormsModule, IconComponent, DialogDirective],
+  templateUrl: './viewer.component.html'
 })
 export class DocumentViewerComponent implements OnInit, OnDestroy {
   docService = inject(DocumentService);
@@ -373,6 +41,22 @@ export class DocumentViewerComponent implements OnInit, OnDestroy {
   route = inject(ActivatedRoute);
   router = inject(Router);
 
+  expanded = signal(false);
+  showDelete = signal(false);
+  errorMessage = signal<string | null>(null);
+  notice = signal<string | null>(null);
+  rendering = signal(true);
+  searchPerformed = signal(false);
+  hitIndex = signal(0);
+  imageWidth = signal(640);
+  imageHeight = signal(800);
+  private renderTask: any = null;
+  private renderVersion = 0;
+  private destroyed = false;
+  private fitMode = true;
+  private resizeObserver?: ResizeObserver;
+  private loadingTask: any = null;
+  @ViewChild('viewportContainer') viewportRef?: ElementRef<HTMLElement>;
   Math = Math;
   docId: string = '';
   doc = signal<Document | null>(null);
@@ -419,60 +103,135 @@ export class DocumentViewerComponent implements OnInit, OnDestroy {
   }
 
   loadDocumentData() {
-    this.docService.get(this.docId).subscribe(doc => {
-      this.doc.set(doc);
-      this.editTitle = doc.title || doc.original_name;
-      this.editSender = doc.sender || '';
-      this.editDate = doc.document_date || '';
-      this.editAmount = doc.amount ? doc.amount / 100 : null;
-      this.editCurrency = doc.currency || 'EUR';
-      this.selectedFolderId = doc.folders?.[0]?.id || '';
+    this.docService.get(this.docId).subscribe({
+      next: (doc) => {
+        this.doc.set(doc);
+        this.editTitle = doc.title || doc.original_name;
+        this.editSender = doc.sender || '';
+        this.editDate = doc.document_date || '';
+        this.editAmount = doc.amount != null ? doc.amount / 100 : null;
+        this.editCurrency = doc.currency || 'EUR';
+        this.selectedFolderId = doc.folders?.[0]?.id || '';
 
-      if (!this.isImage()) {
-        this.loadPdf();
+        if (!this.isImage()) {
+          this.loadPdf();
+        }
+      },
+      error: (err) => {
+        console.error('[PDFViewer] Error loading document:', err);
+        this.rendering.set(false);
+        this.errorMessage.set('Dokument konnte nicht geladen werden.');
       }
     });
 
-    this.docService.getViewerManifest(this.docId).subscribe(man => {
-      this.manifest.set(man);
-      this.totalPages.set(man.total_pages || 1);
+    this.docService.getViewerManifest(this.docId).subscribe({
+      next: (man) => {
+        this.manifest.set(man);
+        this.totalPages.set(man.total_pages || 1);
+      },
+      error: (err) => {
+        console.warn('[PDFViewer] Manifest could not be loaded:', err);
+      }
     });
   }
 
   async loadPdf() {
     try {
-      const loadingTask = pdfjsLib.getDocument({
+      this.rendering.set(true);
+      this.errorMessage.set(null);
+      if (this.loadingTask) {
+        try {
+          await this.loadingTask.destroy();
+        } catch (_) {}
+      }
+      const loadingTask = this.loadingTask = pdfjsLib.getDocument({
         url: this.docService.getFileUrl(this.docId),
         withCredentials: true
       });
       this.pdfDoc = await loadingTask.promise;
       this.totalPages.set(this.pdfDoc.numPages);
-      this.renderPage(this.currentPage());
+      await this.fitToWidth();
     } catch (err) {
-      console.error('Error loading PDF:', err);
+      console.error('[PDFViewer] Error loading PDF:', err);
+      if (!this.destroyed) {
+        this.rendering.set(false);
+        this.errorMessage.set('Die Vorschau konnte nicht geladen werden. Du kannst das Original weiterhin herunterladen.');
+      }
     }
   }
 
   async renderPage(num: number) {
-    if (!this.pdfDoc || !this.canvasRef) return;
+    if (!this.pdfDoc || !this.canvasRef || this.destroyed) return;
+    const version = ++this.renderVersion;
+    if (this.renderTask) {
+      try {
+        this.renderTask.cancel();
+        await this.renderTask.promise;
+      } catch (_) {}
+      this.renderTask = null;
+    }
+    if (version !== this.renderVersion || this.destroyed) return;
+
+    this.rendering.set(true);
+    this.errorMessage.set(null);
     try {
       const page = await this.pdfDoc.getPage(num);
+      if (version !== this.renderVersion || this.destroyed) return;
       const viewport = page.getViewport({ scale: this.zoom(), rotation: this.rotation() });
       const canvas = this.canvasRef.nativeElement;
-      const context = canvas.getContext('2d')!;
-
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-
-      const renderContext = {
-        canvasContext: context,
-        viewport: viewport
-      };
-      await page.render(renderContext).promise;
-    } catch (err) {
-      console.error('Error rendering page:', err);
+      const ratio = Math.min(window.devicePixelRatio || 1, 2, Math.sqrt(8000000 / (viewport.width * viewport.height)));
+      canvas.width = Math.floor(viewport.width * ratio);
+      canvas.height = Math.floor(viewport.height * ratio);
+      canvas.style.width = viewport.width + 'px';
+      canvas.style.height = viewport.height + 'px';
+      this.renderTask = page.render({ canvasContext: canvas.getContext('2d')!, viewport, transform: [ratio, 0, 0, ratio, 0, 0] });
+      await this.renderTask.promise;
+      if (version === this.renderVersion) this.rendering.set(false);
+    } catch (err: any) {
+      if (err?.name !== 'RenderingCancelledException' && !this.destroyed) {
+        console.error('[PDFViewer] Error rendering page:', err);
+        this.rendering.set(false);
+        this.errorMessage.set('Diese Seite konnte nicht dargestellt werden. Bitte eine andere Seite wählen oder erneut öffnen.');
+      }
     }
   }
+
+  async fitToWidth() {
+    this.fitMode = true;
+    if (!this.viewportRef) return;
+    const available = Math.max(120, this.viewportRef.nativeElement.clientWidth - 48);
+    if (this.isImage()) {
+      this.zoom.set(Math.min(1.5, available / (this.rotation() % 180 ? this.imageHeight() : this.imageWidth())));
+    } else if (this.pdfDoc) {
+      const page = await this.pdfDoc.getPage(this.currentPage());
+      if (this.destroyed) return;
+      const viewport = page.getViewport({scale:1,rotation:this.rotation()});
+      this.zoom.set(Math.min(1.5,available / viewport.width));
+      await this.renderPage(this.currentPage());
+    }
+    if (!this.resizeObserver && this.viewportRef) {
+      this.resizeObserver = new ResizeObserver(() => { if (this.fitMode && !this.destroyed) this.fitToWidth(); });
+      this.resizeObserver.observe(this.viewportRef.nativeElement);
+    }
+  }
+  onImageLoad(event: Event) { const image = event.target as HTMLImageElement; this.imageWidth.set(image.naturalWidth); this.imageHeight.set(image.naturalHeight); this.rendering.set(false); this.fitToWidth(); }
+  imageError() { this.rendering.set(false); this.errorMessage.set('Dieses Bild kann der Browser nicht anzeigen. Lade das Original herunter.'); }
+  imageFrameWidth() { return (this.rotation() % 180 ? this.imageHeight() : this.imageWidth()) * this.zoom(); }
+  imageFrameHeight() { return (this.rotation() % 180 ? this.imageWidth() : this.imageHeight()) * this.zoom(); }
+  highlightStyle(hit: InDocSearchHit): Record<string,string> {
+    if (!hit.bbox) return {display:'none'};
+    const box = hit.bbox;
+    const page = this.manifest()?.pages.find(p => p.page_number === this.currentPage());
+    const width = page?.width || this.imageWidth(); const height = page?.height || this.imageHeight();
+    let x = box.x0, y = box.y0, w = box.x1-box.x0, h = box.y1-box.y0;
+    switch (this.rotation()) {
+      case 90: x=height-box.y1; y=box.x0; w=box.y1-box.y0; h=box.x1-box.x0; break;
+      case 180: x=width-box.x1; y=height-box.y1; break;
+      case 270: x=box.y0; y=width-box.x1; w=box.y1-box.y0; h=box.x1-box.x0; break;
+    }
+    return {left:x*this.zoom()+'px',top:y*this.zoom()+'px',width:w*this.zoom()+'px',height:h*this.zoom()+'px'};
+  }
+  moveHit(delta: number) { const hits = this.searchHits(); if (!hits.length) return; this.hitIndex.set((this.hitIndex()+delta+hits.length)%hits.length); this.goToPage(hits[this.hitIndex()].page_number); }
 
   prevPage() {
     if (this.currentPage() > 1) {
@@ -487,6 +246,7 @@ export class DocumentViewerComponent implements OnInit, OnDestroy {
   }
 
   goToPage(num: number) {
+    num = Math.max(1,Math.min(this.totalPages(),num));
     this.currentPage.set(num);
     if (!this.isImage()) {
       this.renderPage(num);
@@ -494,27 +254,29 @@ export class DocumentViewerComponent implements OnInit, OnDestroy {
   }
 
   zoomIn() {
+    this.fitMode = false;
     this.zoom.update(z => Math.min(3.0, z + 0.2));
     if (!this.isImage()) this.renderPage(this.currentPage());
   }
 
   zoomOut() {
+    this.fitMode = false;
     this.zoom.update(z => Math.max(0.4, z - 0.2));
     if (!this.isImage()) this.renderPage(this.currentPage());
   }
 
   rotate() {
     this.rotation.update(r => (r + 90) % 360);
-    if (!this.isImage()) this.renderPage(this.currentPage());
+    if (this.fitMode) this.fitToWidth(); else if (!this.isImage()) this.renderPage(this.currentPage());
   }
 
   onSearchInDoc() {
     if (!this.searchInDocQuery.trim()) {
-      this.searchHits.set([]);
+      this.searchHits.set([]); this.searchPerformed.set(false);
       return;
     }
     this.docService.searchInDocument(this.docId, this.searchInDocQuery.trim()).subscribe(res => {
-      this.searchHits.set(res.hits);
+      this.searchHits.set(res.hits); this.searchPerformed.set(true); this.hitIndex.set(0);
       if (res.hits.length > 0) {
         this.goToPage(res.hits[0].page_number);
       }
@@ -564,9 +326,9 @@ export class DocumentViewerComponent implements OnInit, OnDestroy {
     }).subscribe({
       next: (updated) => {
         this.doc.set(updated);
-        this.saving.set(false);
+        this.saving.set(false); this.notice.set('Änderungen gespeichert.');
       },
-      error: () => this.saving.set(false)
+      error: () => { this.saving.set(false); this.errorMessage.set('Die Änderungen konnten nicht gespeichert werden.'); }
     });
   }
 
@@ -579,7 +341,7 @@ export class DocumentViewerComponent implements OnInit, OnDestroy {
   }
 
   deleteDocument() {
-    if (!confirm('Dokument wirklich löschen?')) return;
+    this.showDelete.set(false);
     this.docService.delete(this.docId).subscribe(() => {
       this.router.navigate(['/documents']);
     });
@@ -598,6 +360,7 @@ export class DocumentViewerComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    this.destroyed = true; this.renderVersion++; this.resizeObserver?.disconnect(); this.renderTask?.cancel(); this.loadingTask?.destroy();
     this.pdfDoc = null;
   }
 }

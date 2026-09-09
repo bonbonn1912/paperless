@@ -12,11 +12,20 @@ import { CommonModule } from '@angular/common';
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      stroke-width="2"
+      stroke-width="1.65"
+      aria-hidden="true"
+      focusable="false"
       stroke-linecap="round"
       stroke-linejoin="round"
       [class]="extraClass"
     >
+      <ng-container *ngIf="name === 'grid'"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></ng-container>
+      <ng-container *ngIf="name === 'list'"><path d="M8 5h13M8 12h13M8 19h13M3 5h.01M3 12h.01M3 19h.01"/></ng-container>
+      <ng-container *ngIf="name === 'layers'"><path d="m12 3 9 5-9 5-9-5 9-5ZM3 12l9 5 9-5M3 16l9 5 9-5"/></ng-container>
+      <ng-container *ngIf="name === 'inbox'"><path d="M4 4h16l2 12v4H2v-4L4 4ZM2 15h6l2 3h4l2-3h6"/></ng-container>
+      <ng-container *ngIf="name === 'arrow-right'"><path d="M4 12h16m-6-6 6 6-6 6"/></ng-container>
+      <ng-container *ngIf="name === 'maximize'"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></ng-container>
+      <ng-container *ngIf="name === 'eye-off'"><path d="m3 3 18 18M10.5 10.5a2 2 0 0 0 3 3M6 6C3 8 1 12 1 12s4 8 11 8c3 0 5-1 7-3M10 4h2c7 0 11 8 11 8s-1 2-3 4"/></ng-container>
       <!-- Search -->
       <ng-container *ngIf="name === 'search'">
         <circle cx="11" cy="11" r="8"></circle>

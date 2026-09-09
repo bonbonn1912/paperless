@@ -63,6 +63,20 @@ class SearchService:
         )
         content_text = "\n".join([p.extracted_text for p in pages if p.extracted_text])
 
+        # Include hidden search keywords (semantic keywords from AI for background search)
+        if doc.search_keywords:
+            try:
+                import json
+                kw_data = json.loads(doc.search_keywords)
+                if isinstance(kw_data, list):
+                    kw_text = " ".join(str(k) for k in kw_data)
+                else:
+                    kw_text = str(doc.search_keywords)
+            except Exception:
+                kw_text = str(doc.search_keywords)
+            if kw_text:
+                content_text = f"{content_text}\n\n{kw_text}" if content_text else kw_text
+
         # Aggregate tag names and aliases
         doc_tags = (
             db.query(Tag.name)

@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     OCR_LANGUAGES: str = "deu+eng"
     OCR_DPI: int = 250
 
+    # AI / Ollama LLM Classification configuration
+    OLLAMA_ENABLED: bool = True
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "qwen3.5:2b-q4_K_M"
+    OLLAMA_KEEP_ALIVE: str = "3m"
+    OLLAMA_CONTEXT_WINDOW: int = 8192
+    OLLAMA_TIMEOUT_SECONDS: int = 120
+
     # Session configuration
     SESSION_COOKIE_NAME: str = "paperless_session"
     SESSION_MAX_AGE_SECONDS: int = 86400 * 30  # 30 days
@@ -75,7 +83,16 @@ class Settings(BaseSettings):
                 # Test write/access
                 p.mkdir(parents=True, exist_ok=True)
             except OSError:
-                p = (Path.cwd() / "data").resolve()
+                backend_dir = Path(__file__).resolve().parent.parent
+                root_dir = backend_dir.parent
+                if (backend_dir / "data" / "documents").exists():
+                    p = backend_dir / "data"
+                elif (root_dir / "data" / "documents").exists():
+                    p = root_dir / "data"
+                elif (backend_dir / "data").exists():
+                    p = backend_dir / "data"
+                else:
+                    p = root_dir / "data"
         return p
 
     @property
@@ -105,6 +122,8 @@ class Settings(BaseSettings):
     @property
     def effective_db_url(self) -> str:
         if self.DATABASE_URL:
+            if self.DATABASE_URL.startswith("sqlite:////data") and not Path("/data").exists():
+                return f"sqlite:///{self.database_path.as_posix()}"
             return self.DATABASE_URL
         return f"sqlite:///{self.database_path.as_posix()}"
 
