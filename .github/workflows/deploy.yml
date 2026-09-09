@@ -70,10 +70,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Convert repository name to lowercase
+      - name: Convert repository owner to lowercase
         id: repo_owner
         run: |
-          echo "lowercase=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
+          echo "lowercase=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_OUTPUT
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

@@ -1,6 +1,6 @@
 services:
   api:
-    image: ${IMAGE_BACKEND:-paperless-backend:latest}
+    image: ${IMAGE_BACKEND:-ghcr.io/bonbonn1912/paperless-backend:latest}
     build:
       context: ./backend
       dockerfile: ../deploy/Dockerfile.backend
@@ -22,7 +22,7 @@ services:
       start_period: 10s
 
   worker:
-    image: ${IMAGE_BACKEND:-paperless-backend:latest}
+    image: ${IMAGE_BACKEND:-ghcr.io/bonbonn1912/paperless-backend:latest}
     build:
       context: ./backend
       dockerfile: ../deploy/Dockerfile.backend
@@ -41,7 +41,7 @@ services:
           memory: 3072M
 
   web:
-    image: ${IMAGE_FRONTEND:-paperless-frontend:latest}
+    image: ${IMAGE_FRONTEND:-ghcr.io/bonbonn1912/paperless-frontend:latest}
     build:
       context: .
       dockerfile: deploy/Dockerfile.frontend

@@ -45,6 +45,10 @@ PAPERLESS_HOST_BIND=127.0.0.1
 PAPERLESS_PORT=8088
 PAPERLESS_DATA_DIR=./data
 
+# Container Images (GitHub Container Registry)
+IMAGE_BACKEND=ghcr.io/bonbonn1912/paperless-backend:latest
+IMAGE_FRONTEND=ghcr.io/bonbonn1912/paperless-frontend:latest
+
 APP_ENV=production
 DATA_DIR=/data
 DATABASE_URL=sqlite:////data/database/app.sqlite3
