@@ -118,22 +118,37 @@ jobs:
     name: Deploy to Server
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && secrets.SERVER_HOST != ''
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Copy compose.yaml to server
+      - name: Check Deployment Secrets
+        id: check_secrets
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+        run: |
+          if [ -z "$SERVER_HOST" ] || [ -z "$SERVER_SSH_KEY" ]; then
+            echo "::warning::SERVER_HOST or SERVER_SSH_KEY secret is not configured in repository secrets. Skipping server deployment step. See server.md for setup instructions."
+            echo "skip_deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip_deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Copy deployment files to server
+        if: steps.check_secrets.outputs.skip_deploy != 'true'
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           port: ${{ secrets.SERVER_PORT || 22 }}
-          source: "compose.yaml"
+          source: "compose.yaml,.env.example"
           target: ${{ secrets.SERVER_DEPLOY_PATH || '/opt/paperless' }}
 
       - name: Deploy containers via SSH
+        if: steps.check_secrets.outputs.skip_deploy != 'true'
         uses: appleboy/ssh-action@v1.2.0
         env:
           REPO_IMAGE: ${{ needs.build-and-push.outputs.repo_owner }}
@@ -153,36 +168,20 @@ jobs:
 
             # Ensure .env exists
             if [ ! -f .env ]; then
-              echo "Creating initial .env file..."
-              cat << 'ENVEOF' > .env
-            APP_ENV=production
-            DOMAIN=paperless.dominikw.de
-            PAPERLESS_HOST_BIND=127.0.0.1
-            PAPERLESS_PORT=8088
-            PAPERLESS_DATA_DIR=./data
-            IMAGE_BACKEND=ghcr.io/$REPO_IMAGE/paperless-backend:latest
-            IMAGE_FRONTEND=ghcr.io/$REPO_IMAGE/paperless-frontend:latest
-            DATA_DIR=/data
-            DATABASE_URL=sqlite:////data/database/app.sqlite3
-            SECRET_KEY=$(openssl rand -hex 32)
-            APP_USERS_JSON={"admin":"$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$RdescudvJCsgqlfreOJAcw"}
-            MAX_UPLOAD_MB=100
-            MAX_BATCH_FILES=100
-            UPLOAD_CONCURRENCY=2
-            HEAVY_JOB_CONCURRENCY=1
-            HEAVY_CPU_LIMIT=2
-            HEAVY_MEMORY_MB=3072
-            ENVEOF
+              echo "Creating initial .env from .env.example..."
+              cp .env.example .env
+              RAND_KEY=$(openssl rand -hex 32 2>/dev/null || date +%s%N)
+              sed -i "s|change-this-to-a-random-secret-key-in-production|$RAND_KEY|" .env 2>/dev/null || true
             fi
 
-            # Update image references in .env to current repo if needed
+            # Export image names from GHCR
             export IMAGE_BACKEND="ghcr.io/$REPO_IMAGE/paperless-backend:latest"
             export IMAGE_FRONTEND="ghcr.io/$REPO_IMAGE/paperless-frontend:latest"
 
             # Authenticate to GHCR on server
             echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
 
-            # Pull images and recreate containers
+            # Pull latest images and recreate containers
             IMAGE_BACKEND="$IMAGE_BACKEND" IMAGE_FRONTEND="$IMAGE_FRONTEND" docker compose pull
             IMAGE_BACKEND="$IMAGE_BACKEND" IMAGE_FRONTEND="$IMAGE_FRONTEND" docker compose up -d --remove-orphans
 
