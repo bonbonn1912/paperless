@@ -33,6 +33,7 @@ jobs:
 
       - name: Install system dependencies for OCR & Testing
         run: |
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google-chrome.sources
           sudo apt-get update
           sudo apt-get install -y tesseract-ocr tesseract-ocr-deu libheif-dev
 
