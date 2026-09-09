@@ -53,8 +53,8 @@ DATABASE_URL=sqlite:////data/database/app.sqlite3
 SECRET_KEY=generiere-hier-einen-langen-geheimen-zufalls-string
 
 # Benutzerzugang: admin / Passwort-Hash (Argon2id)
-# Standard-Passwort unten ist "admin123" - siehe Abschnitt 2.3 zum Ändern!
-APP_USERS_JSON={"admin":"$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$RdescudvJCsgqlfreOJAcw"}
+# Wichtig: In .env-Dateien für Docker Compose müssen Dollarzeichen verdoppelt werden ($$argon2id$$v=19$$...)!
+APP_USERS_JSON={"admin":"$$argon2id$$v=19$$m=65536,t=3,p=4$$Fy29plb68Zwy7Mt7TySA6g$$VFIgxAUKS2E24O28/A4gMJ8nUCWmof+o/xIYWiqPYq0"}
 
 # Hardware-Profile (4 Kerne / 6GB RAM)
 HEAVY_JOB_CONCURRENCY=1
@@ -75,13 +75,15 @@ python3 -c '
 from argon2 import PasswordHasher
 ph = PasswordHasher()
 pw = input("Neues Passwort eingeben: ")
-print("\nDein Hash für APP_USERS_JSON:\n" + ph.hash(pw))
+# Dollarzeichen für Docker Compose verdoppeln ($ -> $$)
+escaped_hash = ph.hash(pw).replace("$", "$$")
+print("\nDein Eintrag für .env (APP_USERS_JSON):\nAPP_USERS_JSON={\"admin\":\"" + escaped_hash + "\"}")
 '
 ```
 
-Trage den ausgegebenen Hash in deine `/opt/paperless/.env` bei `APP_USERS_JSON` ein:
-```json
-APP_USERS_JSON={"admin":"$argon2id$v=19$m=65536,t=3,p=4$..."}
+Trage den ausgegebenen Wert in deine `/opt/paperless/.env` ein:
+```bash
+APP_USERS_JSON={"admin":"$$argon2id$$v=19$$m=65536,t=3,p=4$$..."}
 ```
 
 ---

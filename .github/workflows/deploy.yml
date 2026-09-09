@@ -132,6 +132,12 @@ jobs:
           if [ -z "$SERVER_HOST" ] || [ -z "$SERVER_SSH_KEY" ]; then
             echo "::warning::SERVER_HOST or SERVER_SSH_KEY secret is not configured in repository secrets. Skipping server deployment step. See server.md for setup instructions."
             echo "skip_deploy=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$SERVER_SSH_KEY" =~ ^ssh- ]]; then
+            echo "::error::SERVER_SSH_KEY contains an SSH PUBLIC key (starts with 'ssh-')! You must provide the PRIVATE key (starts with '-----BEGIN ... PRIVATE KEY-----')."
+            exit 1
+          elif [[ "$SERVER_SSH_KEY" != *"BEGIN"* ]]; then
+            echo "::error::SERVER_SSH_KEY does not appear to be a valid private key (missing 'BEGIN ... PRIVATE KEY' header). Please check your secret."
+            exit 1
           else
             echo "skip_deploy=false" >> "$GITHUB_OUTPUT"
           fi

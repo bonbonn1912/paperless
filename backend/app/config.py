@@ -46,7 +46,7 @@ class Settings(BaseSettings):
 
     # JSON map of username -> Argon2id password hash
     APP_USERS_JSON: str = Field(
-        default='{"admin":"$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$RdescudvJCsgqlfreOJAcw"}'
+        default='{"admin":"$argon2id$v=19$m=65536,t=3,p=4$Fy29plb68Zwy7Mt7TySA6g$VFIgxAUKS2E24O28/A4gMJ8nUCWmof+o/xIYWiqPYq0"}'
     )
 
     @field_validator("DATA_DIR", mode="before")
@@ -102,7 +102,7 @@ class Settings(BaseSettings):
         try:
             users = json.loads(self.APP_USERS_JSON)
             if isinstance(users, dict):
-                return {str(k): str(v) for k, v in users.items()}
+                return {str(k): str(v).replace("$$", "$") for k, v in users.items()}
             return {}
         except Exception:
             return {}
