@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@layer base {
+  html, body {
+    height: 100%;
+    margin: 0;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  }
+}
+
+/* Ensure mobile touch targets meet 44px minimum */
+.touch-target {
+  min-width: 44px;
+  min-height: 44px;
+}

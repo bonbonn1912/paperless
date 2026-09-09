@@ -1,0 +1,32 @@
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    OMP_THREAD_LIMIT=2
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    tesseract-ocr \
+    tesseract-ocr-deu \
+    tesseract-ocr-eng \
+    libheif-dev \
+    libgl1 \
+    curl \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -u 1000 -m -s /bin/bash paperless \
+    && mkdir -p /data/documents /data/derived /data/staging /data/database /data/exports \
+    && chown -R paperless:paperless /data
+
+WORKDIR /app
+
+COPY pyproject.toml .
+RUN pip install --upgrade pip setuptools wheel && pip install .
+
+COPY . .
+RUN chown -R paperless:paperless /app
+
+USER paperless
+
+EXPOSE 8000

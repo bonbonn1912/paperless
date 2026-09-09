@@ -1,0 +1,192 @@
+name: CI / CD Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  # -------------------------------------------------------------
+  # Job 1: Test Backend and Frontend
+  # -------------------------------------------------------------
+  test:
+    name: Run Tests & Build Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install system dependencies for OCR & Testing
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tesseract-ocr tesseract-ocr-deu libheif-dev
+
+      - name: Install backend dependencies & run tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install ./backend[dev]
+          cd backend
+          pytest tests/ -v
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies & build
+        run: |
+          cd frontend
+          npm ci
+          npm run build -- --configuration production
+
+  # -------------------------------------------------------------
+  # Job 2: Build & Push Docker Images to GitHub Container Registry
+  # -------------------------------------------------------------
+  build-and-push:
+    name: Build & Push Docker Images
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    outputs:
+      repo_owner: ${{ steps.repo_owner.outputs.lowercase }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Convert repository name to lowercase
+        id: repo_owner
+        run: |
+          echo "lowercase=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build Backend Image (Used for both API and Worker)
+      - name: Build and push Backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./deploy/Dockerfile.backend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.repo_owner.outputs.lowercase }}/paperless-backend:latest
+            ${{ env.REGISTRY }}/${{ steps.repo_owner.outputs.lowercase }}/paperless-backend:${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      # Build Frontend Image (Nginx + Angular PWA)
+      - name: Build and push Frontend image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./deploy/Dockerfile.frontend
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ steps.repo_owner.outputs.lowercase }}/paperless-frontend:latest
+            ${{ env.REGISTRY }}/${{ steps.repo_owner.outputs.lowercase }}/paperless-frontend:${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+  # -------------------------------------------------------------
+  # Job 3: Deploy to Server via SSH
+  # -------------------------------------------------------------
+  deploy:
+    name: Deploy to Server
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    if: (github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch') && secrets.SERVER_HOST != ''
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Copy compose.yaml to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          source: "compose.yaml"
+          target: ${{ secrets.SERVER_DEPLOY_PATH || '/opt/paperless' }}
+
+      - name: Deploy containers via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          REPO_IMAGE: ${{ needs.build-and-push.outputs.repo_owner }}
+          GH_ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOY_PATH: ${{ secrets.SERVER_DEPLOY_PATH || '/opt/paperless' }}
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          port: ${{ secrets.SERVER_PORT || 22 }}
+          envs: REPO_IMAGE,GH_ACTOR,GH_TOKEN,DEPLOY_PATH
+          script: |
+            set -e
+            cd "$DEPLOY_PATH"
+            mkdir -p data
+
+            # Ensure .env exists
+            if [ ! -f .env ]; then
+              echo "Creating initial .env file..."
+              cat << 'ENVEOF' > .env
+            APP_ENV=production
+            DOMAIN=paperless.dominikw.de
+            PAPERLESS_HOST_BIND=127.0.0.1
+            PAPERLESS_PORT=8088
+            PAPERLESS_DATA_DIR=./data
+            IMAGE_BACKEND=ghcr.io/$REPO_IMAGE/paperless-backend:latest
+            IMAGE_FRONTEND=ghcr.io/$REPO_IMAGE/paperless-frontend:latest
+            DATA_DIR=/data
+            DATABASE_URL=sqlite:////data/database/app.sqlite3
+            SECRET_KEY=$(openssl rand -hex 32)
+            APP_USERS_JSON={"admin":"$argon2id$v=19$m=65536,t=3,p=4$c29tZXNhbHQ$RdescudvJCsgqlfreOJAcw"}
+            MAX_UPLOAD_MB=100
+            MAX_BATCH_FILES=100
+            UPLOAD_CONCURRENCY=2
+            HEAVY_JOB_CONCURRENCY=1
+            HEAVY_CPU_LIMIT=2
+            HEAVY_MEMORY_MB=3072
+            ENVEOF
+            fi
+
+            # Update image references in .env to current repo if needed
+            export IMAGE_BACKEND="ghcr.io/$REPO_IMAGE/paperless-backend:latest"
+            export IMAGE_FRONTEND="ghcr.io/$REPO_IMAGE/paperless-frontend:latest"
+
+            # Authenticate to GHCR on server
+            echo "$GH_TOKEN" | docker login ghcr.io -u "$GH_ACTOR" --password-stdin
+
+            # Pull images and recreate containers
+            IMAGE_BACKEND="$IMAGE_BACKEND" IMAGE_FRONTEND="$IMAGE_FRONTEND" docker compose pull
+            IMAGE_BACKEND="$IMAGE_BACKEND" IMAGE_FRONTEND="$IMAGE_FRONTEND" docker compose up -d --remove-orphans
+
+            # Health verification
+            echo "Waiting for services to become healthy..."
+            sleep 8
+            docker compose ps

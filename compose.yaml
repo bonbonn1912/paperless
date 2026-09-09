@@ -1,0 +1,64 @@
+services:
+  api:
+    image: ${IMAGE_BACKEND:-paperless-backend:latest}
+    build:
+      context: ./backend
+      dockerfile: ../deploy/Dockerfile.backend
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ${PAPERLESS_DATA_DIR:-./data}:/data
+    networks:
+      - paperless-net
+    depends_on:
+      - worker
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    image: ${IMAGE_BACKEND:-paperless-backend:latest}
+    build:
+      context: ./backend
+      dockerfile: ../deploy/Dockerfile.backend
+    command: ["python", "-m", "app.processing.worker"]
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - ${PAPERLESS_DATA_DIR:-./data}:/data
+    networks:
+      - paperless-net
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 3072M
+
+  web:
+    image: ${IMAGE_FRONTEND:-paperless-frontend:latest}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.frontend
+    ports:
+      - "${PAPERLESS_HOST_BIND:-127.0.0.1}:${PAPERLESS_PORT:-8088}:80"
+    restart: unless-stopped
+    networks:
+      - paperless-net
+    depends_on:
+      - api
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+networks:
+  paperless-net:
+    driver: bridge

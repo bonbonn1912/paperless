@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+.coverage
+htmlcov/
+.keys
+
+# Node / Angular
+frontend/node_modules/
+frontend/dist/
+frontend/.angular/
+.npm
+npm-debug.log*
+
+# Environment & Data
+.env
+data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+staging/
+derived/
+documents/
+exports/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
+paperless.keys
