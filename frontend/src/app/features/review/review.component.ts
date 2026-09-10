@@ -7,11 +7,12 @@ import { DocumentService } from '../../core/services/document.service';
 import { TagService, TagResponse } from '../../core/services/tag.service';
 import { Document } from '../../core/models';
 import { IconComponent } from '../../shared/components/icon/icon.component';
+import { DialogDirective } from '../../shared/directives/dialog.directive';
 
 @Component({
   selector: 'app-review',
   standalone: true,
-  imports: [CommonModule, RouterModule, FormsModule, IconComponent],
+  imports: [CommonModule, RouterModule, FormsModule, IconComponent, DialogDirective],
   templateUrl: './review.component.html'
 })
 export class ReviewComponent implements OnInit {

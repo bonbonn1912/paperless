@@ -1,8 +1,15 @@
 import { Component, inject, signal, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { SettingsService, ScheduleItem, CapabilitiesData } from '../../core/services/settings.service';
-import { ThemeService, Theme } from '../../core/services/theme.service';
+import { SettingsService } from '../../core/services/settings.service';
+import {
+  ACCENT_PRESETS,
+  SURFACE_TONES,
+  Theme,
+  ThemeService,
+  ToneColors,
+  ToneId
+} from '../../core/services/theme.service';
 import { DialogDirective } from '../../shared/directives/dialog.directive';
 import { IconComponent } from '../../shared/components/icon/icon.component';
 
@@ -16,6 +23,8 @@ export class SettingsComponent implements OnInit {
   settingsService = inject(SettingsService);
   themeService = inject(ThemeService);
   themeOptions: { value: Theme; label: string }[] = [{value:'light',label:'Hell'},{value:'dark',label:'Dunkel'},{value:'system',label:'System'}];
+  toneOptions = SURFACE_TONES;
+  accentPresets = ACCENT_PRESETS;
   notice = signal<string | null>(null);
   errorMessage = signal<string | null>(null);
   scheduleToDelete = signal<string | null>(null);
@@ -31,6 +40,43 @@ export class SettingsComponent implements OnInit {
   ngOnInit() {
     this.settingsService.loadCapabilities().subscribe();
     this.settingsService.loadSchedules().subscribe();
+  }
+
+  setTone(tone: ToneId) {
+    this.themeService.setTone(tone);
+    this.notice.set(null);
+  }
+
+  setAccent(color: string) {
+    this.themeService.setAccent(color);
+    this.notice.set(null);
+  }
+
+  onAccentInput(event: Event) {
+    this.setAccent((event.target as HTMLInputElement).value);
+  }
+
+  isPresetActive(value: string) {
+    return this.themeService.accent().toLowerCase() === value;
+  }
+
+  isCustomAccent() {
+    return !this.accentPresets.some((preset) => preset.value === this.themeService.accent());
+  }
+
+  isDefaultAppearance() {
+    return this.themeService.currentTheme() === 'system'
+      && this.themeService.tone() === 'papier'
+      && this.themeService.isDefaultAccent();
+  }
+
+  toneColors(id: ToneId): ToneColors {
+    return this.themeService.toneColors(id);
+  }
+
+  resetAppearance() {
+    this.themeService.resetAppearance();
+    this.notice.set('Das Erscheinungsbild ist wieder auf den Standard gesetzt.');
   }
 
   triggerExport() {

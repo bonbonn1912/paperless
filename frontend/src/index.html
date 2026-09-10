@@ -5,7 +5,7 @@
   <title>Paperless</title>
   <base href="/">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#285941">
+  <meta name="theme-color" content="#f4f4f1">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="icon" type="image/x-icon" href="favicon.ico">
@@ -33,6 +33,23 @@
         return { promise: p, resolve: res, reject: rej };
       };
     }
+    (function () {
+      try {
+        var theme = localStorage.getItem('paperless_theme');
+        var dark = theme === 'dark' || (theme !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        var root = document.documentElement;
+        root.classList.toggle('dark', dark);
+        var saved = JSON.parse(localStorage.getItem('paperless_vars') || 'null');
+        if (saved) {
+          var vars = dark ? saved.dark : saved.light;
+          for (var key in vars) {
+            if (Object.prototype.hasOwnProperty.call(vars, key)) root.style.setProperty(key, vars[key]);
+          }
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta && vars['--bg']) meta.setAttribute('content', vars['--bg']);
+        }
+      } catch (e) {}
+    })();
   </script>
 </head>
 <body>

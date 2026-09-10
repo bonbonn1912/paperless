@@ -1,11 +1,209 @@
 <section class="page page-narrow">
-  <header class="page-header"><div><p class="eyebrow">GANZ WIE DU ES BRAUCHST</p><h1>Dein Archiv. Dein Stil.</h1><p>Darstellung, automatische Aufgaben und Datensicherung.</p></div></header>
-  <div *ngIf="notice()" class="message" role="status">{{ notice() }}</div><div *ngIf="errorMessage()" class="message message-error" role="alert">{{ errorMessage() }}</div>
-  <div class="settings-layout"><div class="stack">
-    <section class="settings-section"><header><div><h2>Darstellung</h2><p class="muted small">Ein guter Platz für deine Dokumente, zu jeder Tageszeit.</p></div><app-icon name="sun" [size]="22" /></header><div class="segmented" aria-label="Farbschema"><button *ngFor="let option of themeOptions" [class.is-active]="themeService.currentTheme() === option.value" [attr.aria-pressed]="themeService.currentTheme() === option.value" (click)="themeService.setTheme(option.value)" class="flex-1">{{ option.label }}</button></div></section>
-    <section class="settings-section"><header><div><h2>Datensicherung</h2><p class="muted small">Eine Sicherung deiner Daten auf dem Server erstellen.</p></div><app-icon name="download" [size]="22" /></header><div *ngIf="exportMessage()" class="message message-success" role="status"><app-icon name="check" />{{ exportMessage() }}</div><button class="btn" (click)="triggerExport()" [disabled]="exporting()"><app-icon [name]="exporting() ? 'refresh-cw' : 'download'" [size]="18" />{{ exporting() ? 'Sicherung wird erstellt …' : 'Datensicherung erstellen' }}</button></section>
-    <section class="settings-section"><header><div><h2>Automatische Aufgaben</h2><p class="muted small">Dein Server erledigt die Arbeit zur passenden Zeit.</p></div><button class="icon-button" (click)="showScheduleModal.set(true)" aria-label="Zeitplan hinzufügen"><app-icon name="plus" /></button></header><div *ngFor="let s of settingsService.schedules()" class="setting-row"><div><strong>{{ jobLabel(s.job_type) }}</strong><p>{{ s.local_time }} Uhr · {{ s.timezone }}</p><p>Nächster Lauf: {{ s.next_run_at ? (s.next_run_at | date:'dd.MM.yyyy HH:mm') : 'Nicht geplant' }}</p></div><div class="page-actions"><button class="btn btn-quiet" (click)="runNow(s.id)">Jetzt starten</button><button class="icon-button" (click)="scheduleToDelete.set(s.id)" aria-label="Zeitplan löschen"><app-icon name="trash" [size]="18" /></button></div></div><div *ngIf="!settingsService.schedules().length" class="py-4"><p class="muted small">Noch keine Aufgaben geplant.</p><button class="btn btn-soft mt-4" (click)="showScheduleModal.set(true)"><app-icon name="plus" />Ersten Zeitplan erstellen</button></div></section>
-  </div><aside class="settings-section" *ngIf="settingsService.capabilities() as caps"><p class="eyebrow">DEIN SERVER</p><h2>Gut eingerichtet.</h2><p class="muted small mt-3 mb-4">Die verfügbaren Grenzen deiner Installation.</p><div class="resource-row"><span>Dateigröße</span><strong>{{ caps.max_upload_mb }} MB</strong></div><div class="resource-row"><span>Stapelgröße</span><strong>{{ caps.max_batch_files }} Dateien</strong></div><div class="resource-row"><span>Kamera-Dokument</span><strong>{{ caps.max_capture_pages }} Seiten</strong></div><div class="resource-row"><span>Parallele Jobs</span><strong>{{ caps.heavy_job_concurrency }}</strong></div><div class="resource-row"><span>Arbeitsspeicher</span><strong>{{ caps.heavy_memory_mb }} MB</strong></div><div class="resource-row"><span>OCR-Sprachen</span><strong>{{ caps.available_ocr_languages.join(', ') }}</strong></div></aside></div>
+  <header class="page-header">
+    <div>
+      <p class="eyebrow">GANZ WIE DU ES BRAUCHST</p>
+      <h1>Dein Archiv. Dein Stil.</h1>
+      <p>Darstellung, automatische Aufgaben und Datensicherung.</p>
+    </div>
+  </header>
+
+  <div *ngIf="notice()" class="message" role="status">{{ notice() }}</div>
+  <div *ngIf="errorMessage()" class="message message-error" role="alert">{{ errorMessage() }}</div>
+
+  <div class="settings-layout">
+    <div class="stack">
+      <section class="settings-section appearance-section">
+        <header>
+          <div>
+            <h2>Erscheinungsbild</h2>
+            <p class="muted small">Farbe, Fläche und Kontrast — sofort gespeichert auf diesem Gerät.</p>
+          </div>
+          <button class="btn btn-quiet" (click)="resetAppearance()" [disabled]="isDefaultAppearance()">
+            Zurücksetzen
+          </button>
+        </header>
+
+        <div class="appearance-block">
+          <div class="appearance-label">
+            <span>Modus</span>
+            <span class="muted small">Hell, dunkel oder wie dein Gerät</span>
+          </div>
+          <div class="segmented full" role="radiogroup" aria-label="Farbschema">
+            <button
+              *ngFor="let option of themeOptions"
+              type="button"
+              class="flex-1"
+              role="radio"
+              [attr.aria-checked]="themeService.currentTheme() === option.value"
+              [class.is-active]="themeService.currentTheme() === option.value"
+              (click)="themeService.setTheme(option.value)"
+            >{{ option.label }}</button>
+          </div>
+        </div>
+
+        <div class="appearance-block">
+          <div class="appearance-label">
+            <span>Papier</span>
+            <span class="muted small">Grundton der Flächen</span>
+          </div>
+          <div class="tone-grid" role="radiogroup" aria-label="Oberflächen-Ton">
+            <button
+              *ngFor="let tone of toneOptions"
+              type="button"
+              class="tone-option"
+              role="radio"
+              [attr.aria-checked]="themeService.tone() === tone.id"
+              [class.is-active]="themeService.tone() === tone.id"
+              [style.background]="toneColors(tone.id).bg"
+              [style.borderColor]="themeService.tone() === tone.id ? 'var(--accent)' : toneColors(tone.id).border"
+              (click)="setTone(tone.id)"
+            >
+              <span class="tone-sheet" [style.background]="toneColors(tone.id).surface" [style.borderColor]="toneColors(tone.id).border" aria-hidden="true"></span>
+              <span class="tone-name">{{ tone.label }}</span>
+              <span class="tone-desc">{{ tone.description }}</span>
+              <span class="tone-check" *ngIf="themeService.tone() === tone.id" aria-hidden="true"><app-icon name="check" [size]="13" /></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="appearance-block">
+          <div class="appearance-label">
+            <span>Akzentfarbe</span>
+            <span class="muted small">Nur für Aktionen und Auswahl</span>
+          </div>
+          <div class="accent-row">
+            <button
+              *ngFor="let preset of accentPresets"
+              type="button"
+              class="accent-swatch"
+              [class.is-active]="isPresetActive(preset.value)"
+              [style.--swatch]="preset.value"
+              [style.color]="themeService.contrastColor(preset.value)"
+              [attr.aria-label]="'Akzent ' + preset.label"
+              [attr.aria-pressed]="isPresetActive(preset.value)"
+              (click)="setAccent(preset.value)"
+            ><app-icon *ngIf="isPresetActive(preset.value)" name="check" [size]="14" /></button>
+            <label class="accent-custom" [class.is-active]="isCustomAccent()">
+              <input
+                type="color"
+                [value]="themeService.accent()"
+                (input)="onAccentInput($event)"
+                aria-label="Eigene Akzentfarbe wählen"
+              />
+              <app-icon name="plus" [size]="14" />
+            </label>
+            <code class="accent-code">{{ themeService.accent() }}</code>
+          </div>
+        </div>
+
+        <div class="appearance-block">
+          <div class="appearance-label">
+            <span>Vorschau</span>
+            <span class="muted small">So liest sich dein Archiv</span>
+          </div>
+          <div class="appearance-preview" aria-hidden="true">
+            <div class="preview-sheet">
+              <p class="eyebrow">RECHNUNG</p>
+              <strong>Stadtwerke München</strong>
+              <span class="preview-line"></span>
+              <span class="preview-line short"></span>
+              <div class="preview-tags">
+                <span class="tag-pill"><span class="tag-dot"></span>Wohnen</span>
+                <span class="tag-pill">2026</span>
+              </div>
+            </div>
+            <div class="preview-actions">
+              <span class="btn btn-primary">Bestätigen</span>
+              <span class="btn">Später</span>
+              <span class="status status-active">In Verarbeitung</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <header>
+          <div>
+            <h2>Datensicherung</h2>
+            <p class="muted small">Eine Sicherung deiner Daten auf dem Server erstellen.</p>
+          </div>
+          <app-icon name="download" [size]="22" />
+        </header>
+        <div *ngIf="exportMessage()" class="message message-success" role="status"><app-icon name="check" />{{ exportMessage() }}</div>
+        <button class="btn" (click)="triggerExport()" [disabled]="exporting()">
+          <app-icon [name]="exporting() ? 'refresh-cw' : 'download'" [size]="18" />{{ exporting() ? 'Sicherung wird erstellt …' : 'Datensicherung erstellen' }}
+        </button>
+      </section>
+
+      <section class="settings-section">
+        <header>
+          <div>
+            <h2>Automatische Aufgaben</h2>
+            <p class="muted small">Dein Server erledigt die Arbeit zur passenden Zeit.</p>
+          </div>
+          <button class="icon-button" (click)="showScheduleModal.set(true)" aria-label="Zeitplan hinzufügen"><app-icon name="plus" /></button>
+        </header>
+        <div *ngFor="let s of settingsService.schedules()" class="setting-row">
+          <div>
+            <strong>{{ jobLabel(s.job_type) }}</strong>
+            <p>{{ s.local_time }} Uhr · {{ s.timezone }}</p>
+            <p>Nächster Lauf: {{ s.next_run_at ? (s.next_run_at | date:'dd.MM.yyyy HH:mm') : 'Nicht geplant' }}</p>
+          </div>
+          <div class="page-actions">
+            <button class="btn btn-quiet" (click)="runNow(s.id)">Jetzt starten</button>
+            <button class="icon-button" (click)="scheduleToDelete.set(s.id)" aria-label="Zeitplan löschen"><app-icon name="trash" [size]="18" /></button>
+          </div>
+        </div>
+        <div *ngIf="!settingsService.schedules().length" class="py-4">
+          <p class="muted small">Noch keine Aufgaben geplant.</p>
+          <button class="btn btn-soft mt-4" (click)="showScheduleModal.set(true)"><app-icon name="plus" />Ersten Zeitplan erstellen</button>
+        </div>
+      </section>
+    </div>
+
+    <aside class="settings-section" *ngIf="settingsService.capabilities() as caps">
+      <p class="eyebrow">DEIN SERVER</p>
+      <h2>Gut eingerichtet.</h2>
+      <p class="muted small mt-3 mb-4">Die verfügbaren Grenzen deiner Installation.</p>
+      <div class="resource-row"><span>Dateigröße</span><strong>{{ caps.max_upload_mb }} MB</strong></div>
+      <div class="resource-row"><span>Stapelgröße</span><strong>{{ caps.max_batch_files }} Dateien</strong></div>
+      <div class="resource-row"><span>Kamera-Dokument</span><strong>{{ caps.max_capture_pages }} Seiten</strong></div>
+      <div class="resource-row"><span>Parallele Jobs</span><strong>{{ caps.heavy_job_concurrency }}</strong></div>
+      <div class="resource-row"><span>Arbeitsspeicher</span><strong>{{ caps.heavy_memory_mb }} MB</strong></div>
+      <div class="resource-row"><span>OCR-Sprachen</span><strong>{{ caps.available_ocr_languages.join(', ') }}</strong></div>
+    </aside>
+  </div>
 </section>
-<div *ngIf="showScheduleModal()" class="modal-backdrop" appDialog aria-label="Zeitplan erstellen" (dialogClose)="showScheduleModal.set(false)"><form class="modal-panel" (ngSubmit)="createSchedule()"><div class="modal-heading"><h2>Ein neuer Zeitplan.</h2><button type="button" class="icon-button" (click)="showScheduleModal.set(false)" aria-label="Schließen"><app-icon name="x" /></button></div><p class="muted small">Die Aufgabe läuft täglich zur eingestellten Zeit, auch wenn die App geschlossen ist.</p><label class="field">Aufgabe<select name="jobType" [(ngModel)]="newJobType"><option value="base_pipeline">Dokumente verarbeiten</option><option value="backup">Datenbank sichern</option></select></label><label class="field">Uhrzeit<input name="localTime" type="time" [(ngModel)]="newLocalTime" required /></label><p class="muted small">Zeitzone: Europe/Berlin</p><div class="modal-actions"><button type="button" class="btn btn-quiet" (click)="showScheduleModal.set(false)">Abbrechen</button><button class="btn btn-primary" [disabled]="!newLocalTime">Zeitplan erstellen</button></div></form></div>
-<div *ngIf="scheduleToDelete()" class="modal-backdrop" appDialog aria-label="Zeitplan löschen" (dialogClose)="scheduleToDelete.set(null)"><div class="modal-panel"><h2>Zeitplan löschen?</h2><p class="muted">Die Aufgabe wird nicht mehr automatisch gestartet. Deine Dokumente bleiben erhalten.</p><div class="modal-actions"><button class="btn" (click)="scheduleToDelete.set(null)">Behalten</button><button class="btn btn-danger" (click)="deleteSchedule(scheduleToDelete()!)">Zeitplan löschen</button></div></div></div>
+
+<div *ngIf="showScheduleModal()" class="modal-backdrop" appDialog aria-label="Zeitplan erstellen" (dialogClose)="showScheduleModal.set(false)">
+  <form class="modal-panel" (ngSubmit)="createSchedule()">
+    <div class="modal-heading">
+      <h2>Ein neuer Zeitplan.</h2>
+      <button type="button" class="icon-button" (click)="showScheduleModal.set(false)" aria-label="Schließen"><app-icon name="x" /></button>
+    </div>
+    <p class="muted small">Die Aufgabe läuft täglich zur eingestellten Zeit, auch wenn die App geschlossen ist.</p>
+    <label class="field">Aufgabe
+      <select name="jobType" [(ngModel)]="newJobType">
+        <option value="base_pipeline">Dokumente verarbeiten</option>
+        <option value="backup">Datenbank sichern</option>
+      </select>
+    </label>
+    <label class="field">Uhrzeit<input name="localTime" type="time" [(ngModel)]="newLocalTime" required /></label>
+    <p class="muted small">Zeitzone: Europe/Berlin</p>
+    <div class="modal-actions">
+      <button type="button" class="btn btn-quiet" (click)="showScheduleModal.set(false)">Abbrechen</button>
+      <button class="btn btn-primary" [disabled]="!newLocalTime">Zeitplan erstellen</button>
+    </div>
+  </form>
+</div>
+
+<div *ngIf="scheduleToDelete()" class="modal-backdrop" appDialog aria-label="Zeitplan löschen" (dialogClose)="scheduleToDelete.set(null)">
+  <div class="modal-panel">
+    <h2>Zeitplan löschen?</h2>
+    <p class="muted">Die Aufgabe wird nicht mehr automatisch gestartet. Deine Dokumente bleiben erhalten.</p>
+    <div class="modal-actions">
+      <button class="btn" (click)="scheduleToDelete.set(null)">Behalten</button>
+      <button class="btn btn-danger" (click)="deleteSchedule(scheduleToDelete()!)">Zeitplan löschen</button>
+    </div>
+  </div>
+</div>
